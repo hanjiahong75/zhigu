@@ -10,7 +10,7 @@ from ..services.technical import calc_all_indicators
 from ..services.retrieval import build_context_prompt
 from ..services.memory import store_memory
 from ..services.summarizer import should_summarize, generate_summary
-from ..services.chat_service import chat_full, generate_title, chat_full_stream
+from ..services.chat_service import chat_full, generate_title, chat_full_stream, chat_agent, chat_agent_stream
 from ..services.portfolio_service import (
     recognize_portfolio, update_current_prices, get_portfolio_with_prices, calc_portfolio_risk,
     build_portfolio_context, save_portfolio_items, delete_portfolio
@@ -194,7 +194,7 @@ async def api_chat(req: ChatRequest, db: Session = Depends(get_db)):
     db.add(user_msg)
     db.commit()
 
-    result = await chat_full(
+    result = await chat_agent(
         user_message=req.message,
         conversation_history=history,
         thread_id=thread_id,
@@ -517,7 +517,7 @@ async def v1_chat_completions(request: Request):
             stock_data_meta = None
 
             try:
-                async for chunk in chat_full_stream(
+                async for chunk in chat_agent_stream(
                     user_message=current_message,
                     conversation_history=conversation_history,
                     thread_id=thread_id,
@@ -560,7 +560,7 @@ async def v1_chat_completions(request: Request):
         )
     else:
         try:
-            result = await chat_full(
+            result = await chat_agent(
                 user_message=current_message,
                 conversation_history=conversation_history,
                 thread_id=thread_id,
@@ -672,6 +672,7 @@ async def _persist_stream_message(
         logger.error(f"PERSIST error thread={thread_id}: {e}")
     finally:
         db.close()
+
 
 
 

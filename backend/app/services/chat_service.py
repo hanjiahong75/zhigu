@@ -424,3 +424,253 @@ async def chat_full_stream(
 
     # Store metadata for the route to persist
     yield f":__meta__{json.dumps({'full_reply': full_reply, 'type': 'stock' if stock_data else 'general', 'stock_code': stock_data['code'] if stock_data else '', 'stock_name': stock_data['name'] if stock_data else '', 'market': stock_data['market'] if stock_data else '', 'quote': stock_data['quote'] if stock_data else None, 'kline': stock_data['kline'] if stock_data else None}, ensure_ascii=False)}\n\n"
+
+# --- Agent mode: Function Calling ---
+
+from .agent_tools import AGENT_TOOLS, AGENT_SYSTEM_PROMPT, execute_tool
+
+MAX_AGENT_ITERATIONS = 5
+AGENT_TIMEOUT_SECONDS = 60
+
+
+async def chat_agent(
+    user_message: str,
+    conversation_history: list[dict] = None,
+    thread_id: str = "",
+    db: Session = None,
+) -> dict:
+    """Agent chat with function calling (non-streaming)."""
+    if not DEEPSEEK_API_KEY:
+        return {"reply": "**错误**：未配置 DeepSeek API Key", "type": "error"}
+
+    system_prompt = AGENT_SYSTEM_PROMPT
+    if db:
+        try:
+            portfolio_context = build_portfolio_context(db)
+            if portfolio_context:
+                system_prompt += f"\n\n{portfolio_context}"
+        except Exception:
+            pass
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if conversation_history:
+        messages.extend(conversation_history[-20:])
+    messages.append({"role": "user", "content": user_message})
+
+    logger = logging.getLogger("wechat")
+
+    for iteration in range(MAX_AGENT_ITERATIONS):
+        logger.info(f"Agent iteration {iteration + 1}/{MAX_AGENT_ITERATIONS} thread={thread_id}")
+
+        try:
+            resp = requests.post(
+                f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "deepseek-chat",
+                    "messages": messages,
+                    "tools": AGENT_TOOLS,
+                    "temperature": 0.4,
+                    "max_tokens": 1200,
+                },
+                timeout=AGENT_TIMEOUT_SECONDS,
+            )
+            data = resp.json()
+        except Exception as e:
+            logger.error(f"Agent API error (iteration {iteration}): {e}")
+            return {"reply": "AI 服务暂时不可用，请稍后再试", "type": "error"}
+
+        if "choices" not in data or not data["choices"]:
+            return {"reply": "AI 响应异常，请重试", "type": "error"}
+
+        choice = data["choices"][0]
+        message = choice.get("message", {})
+
+        # Check for tool calls
+        tool_calls = message.get("tool_calls", [])
+        if tool_calls:
+            # Record assistant message with tool_calls
+            assistant_msg = {
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls,
+            }
+            messages.append(assistant_msg)
+
+            # Execute each tool
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+                tool_result = execute_tool(func_name, args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_result,
+                })
+                logger.info(f"  Tool: {func_name}({str(args)[:60]}) -> {len(tool_result)} chars")
+        else:
+            # No tool calls — final answer
+            reply = message.get("content", "")
+            if not reply:
+                reply = "抱歉，我暂时无法回答这个问题，请换个方式提问。"
+            return {"reply": reply, "type": "general"}
+
+    # Exhausted iterations without final answer
+    return {"reply": "分析过程较长，请稍后重新提问（可尝试简化问题）", "type": "error"}
+
+
+async def chat_agent_stream(
+    user_message: str,
+    conversation_history: list[dict] = None,
+    thread_id: str = "",
+    db: Session = None,
+) -> AsyncGenerator[str, None]:
+    """Agent chat with function calling (streaming).
+    
+    Tool execution rounds are non-streaming.
+    Final response round is streamed.
+    """
+    def _sse_chunk(content: str, finish_reason: str = None) -> str:
+        delta = {"content": content}
+        choice = {"index": 0, "delta": delta}
+        if finish_reason:
+            choice["finish_reason"] = finish_reason
+        return f"data: {json.dumps({'choices': [choice]})}\n\n"
+
+    def _sse_done() -> str:
+        return "data: [DONE]\n\n"
+
+    if not DEEPSEEK_API_KEY:
+        yield _sse_chunk("AI 服务暂时不可用，请稍后再试", "stop")
+        yield _sse_done()
+        return
+
+    system_prompt = AGENT_SYSTEM_PROMPT
+    if db:
+        try:
+            portfolio_context = build_portfolio_context(db)
+            if portfolio_context:
+                system_prompt += f"\n\n{portfolio_context}"
+        except Exception:
+            pass
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if conversation_history:
+        messages.extend(conversation_history[-20:])
+    messages.append({"role": "user", "content": user_message})
+
+    logger = logging.getLogger("wechat")
+
+    # Phase 1: Tool execution loop (non-streaming)
+    for iteration in range(MAX_AGENT_ITERATIONS):
+        try:
+            resp = requests.post(
+                f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "deepseek-chat",
+                    "messages": messages,
+                    "tools": AGENT_TOOLS,
+                    "temperature": 0.4,
+                    "max_tokens": 1200,
+                },
+                timeout=AGENT_TIMEOUT_SECONDS,
+            )
+            data = resp.json()
+        except Exception as e:
+            logger.error(f"Agent stream API error: {e}")
+            yield _sse_chunk("AI 服务暂时不可用，请稍后再试", "stop")
+            yield _sse_done()
+            return
+
+        if "choices" not in data or not data["choices"]:
+            yield _sse_chunk("AI 响应异常，请重试", "stop")
+            yield _sse_done()
+            return
+
+        choice = data["choices"][0]
+        message = choice.get("message", {})
+        tool_calls = message.get("tool_calls", [])
+
+        if tool_calls:
+            assistant_msg = {
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls,
+            }
+            messages.append(assistant_msg)
+
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
+                tool_result = execute_tool(func_name, args)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_result,
+                })
+                logger.info(f"  Stream tool: {func_name}({str(args)[:60]}) -> {len(tool_result)} chars")
+        else:
+            # Final answer — stream it
+            full_reply = ""
+
+            try:
+                stream_resp = requests.post(
+                    f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"},
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": messages,
+                        "temperature": 0.4,
+                        "max_tokens": 1200,
+                        "stream": True,
+                    },
+                    timeout=AGENT_TIMEOUT_SECONDS,
+                    stream=True,
+                )
+
+                for raw_line in stream_resp.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                    line = line.strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        if "choices" in chunk and chunk["choices"]:
+                            delta = chunk["choices"][0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                full_reply += content
+                                yield _sse_chunk(content)
+                    except json.JSONDecodeError:
+                        continue
+
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "timeout" in error_msg or "timed out" in error_msg:
+                    yield _sse_chunk("处理中，请稍后重新提问", "stop")
+                else:
+                    logger.error(f"Agent stream error on final: {e}")
+                    yield _sse_chunk("服务暂时不可用，请稍后再试", "stop")
+
+            full_reply = _truncate_response(full_reply)
+            yield _sse_done()
+
+            # Metadata for persistence
+            yield f":__meta__{json.dumps({'full_reply': full_reply, 'type': 'general', 'stock_code': '', 'stock_name': '', 'market': '', 'quote': None, 'kline': None}, ensure_ascii=False)}\n\n"
+            return
+
+    # Exhausted
+    yield _sse_chunk("分析过程较长，请稍后重新提问", "stop")
+    yield _sse_done()

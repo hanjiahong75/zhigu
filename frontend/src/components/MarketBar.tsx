@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Tag } from "antd";
-import { getMarketIndices } from "../api/client";
+import { getMarketIndices, getGlobalIndices } from "../api/client";
 import type { MarketIndex } from "../types";
 
 export default function MarketBar() {
@@ -9,8 +9,13 @@ export default function MarketBar() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getMarketIndices();
-        setIndices(data.indices || []);
+        const [cnData, globalData] = await Promise.all([
+          getMarketIndices(),
+          getGlobalIndices(),
+        ]);
+        const cn = (cnData.indices || []).slice(0, 3);
+        const gl = (globalData.indices || []).slice(0, 4);
+        setIndices([...cn, ...gl]);
       } catch {
         // silent
       }

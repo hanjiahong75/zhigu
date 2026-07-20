@@ -1,176 +1,334 @@
-import { useState, useEffect } from 'react';
-import { Button, Table, InputNumber, Input, Select, Card, Statistic, Space, Popconfirm, App, Spin } from 'antd';
-import { DeleteOutlined, SaveOutlined, PlusOutlined } from '@ant-design/icons';
-import { getPortfolio, getPortfolioRisk, updatePortfolioItems, deletePortfolio } from '../api/client';
-import type { Portfolio, PortfolioItem } from '../types';
+﻿import { useState, useEffect, useRef } from "react";
+import { Button, Spin, App, Typography, Card, Popconfirm } from "antd";
+import {
+  CameraOutlined, DeleteOutlined, LoadingOutlined,
+  ArrowUpOutlined, ArrowDownOutlined,
+} from "@ant-design/icons";
+import {
+  getPortfolio, uploadPortfolioImage, updatePortfolioItems, deletePortfolio,
+} from "../api/client";
+import type { Portfolio, PortfolioItem } from "../types";
 
-interface EditableItem {
-  key: string;
-  stock_code: string;
-  stock_name: string;
-  asset_type: string;
-  quantity: number;
-  cost_price: number;
-  current_price: number;
+const { Text } = Typography;
+
+function formatMoney(v: number | undefined | null): string {
+  if (v == null || isNaN(v)) return "-";
+  const abs = Math.abs(v);
+  if (abs >= 10000) return (v / 10000).toFixed(2) + "万";
+  return v.toFixed(2);
 }
 
-interface RiskData {
-  sharpe_ratio: number | null;
-  max_drawdown: number | null;
-  message: string | null;
+function computeReturnRate(holdingReturn: number, costAmount: number): number | null {
+  if (!costAmount || costAmount === 0) return null;
+  return (holdingReturn / costAmount) * 100;
 }
 
 export default function PortfolioPanel() {
   const { message } = App.useApp();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editItems, setEditItems] = useState<EditableItem[]>([]);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [risk, setRisk] = useState<RiskData | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadPortfolio(); }, []);
-  useEffect(() => { if (portfolio?.items?.length) loadRisk(); }, [portfolio?.items?.length]);
 
   const loadPortfolio = async () => {
     setLoading(true);
     try {
       const data = await getPortfolio();
-      setPortfolio(data);
-      if (data.items && data.items.length > 0) {
-        setEditItems(data.items.map((item: PortfolioItem, idx: number) => ({
-          key: String(item.id || idx),
-          stock_code: item.stock_code,
-          stock_name: item.stock_name,
-          asset_type: item.asset_type,
-          quantity: item.quantity,
-          cost_price: item.cost_price,
-          current_price: item.current_price,
-        })));
+      if (data.items) {
+        data.items = data.items.filter((item: PortfolioItem) => item.asset_type === "fund");
       }
-    } catch { message.error('加载持仓失败'); }
+      setPortfolio(data);
+    } catch { message.error("加载持仓失败"); }
     setLoading(false);
   };
 
-  const loadRisk = async () => {
-    try { const data = await getPortfolioRisk(); setRisk(data); } catch { /* silent */ }
-  };
-
-  const handleSave = async () => {
-    const validItems = editItems.filter(item => item.stock_name);
-    if (validItems.length === 0) { message.warning('请添加持仓数据'); return; }
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setOcrLoading(true);
     try {
-      await updatePortfolioItems(validItems);
-      message.success('持仓保存成功');
-      setHasChanges(false);
-      loadPortfolio();
-    } catch { message.error('保存失败'); }
+      const result = await uploadPortfolioImage(file);
+      if (result.items && result.items.length > 0) {
+        const fundItems = result.items.filter((item: any) => item.asset_type === "fund");
+        if (fundItems.length === 0) {
+          message.warning("未识别到基金持仓，请确认图片中包含基金信息");
+          return;
+        }
+        await updatePortfolioItems(fundItems);
+        message.success(`成功导入 ${fundItems.length} 只基金`);
+        loadPortfolio();
+      } else {
+        message.warning("未识别到持仓信息，请尝试更清晰的截图");
+      }
+    } catch (err: any) {
+      message.error("识别失败：" + (err.message || "请重试"));
+    } finally {
+      setOcrLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
-  const handleClear = async () => {
+  const handleRemoveFund = async (itemId: number) => {
+    const items = portfolio?.items || [];
+    const remaining = items.filter((i) => i.id !== itemId);
+    try {
+      if (remaining.length === 0) {
+        await deletePortfolio();
+        setPortfolio(null);
+      } else {
+        await updatePortfolioItems(remaining);
+        loadPortfolio();
+      }
+      message.success("已移除");
+    } catch { message.error("操作失败"); }
+  };
+
+  const handleClearAll = async () => {
     try {
       await deletePortfolio();
       setPortfolio(null);
-      setEditItems([]);
-      setRisk(null);
-      setHasChanges(false);
-      message.success('持仓已清空');
-    } catch { message.error('清空失败'); }
+      message.success("已清空");
+    } catch { message.error("清空失败"); }
   };
 
-  const handleItemChange = (key: string, field: string, value: any) => {
-    setEditItems(prev => prev.map(item => item.key === key ? { ...item, [field]: value } : item));
-    setHasChanges(true);
-  };
+  const fundItems: PortfolioItem[] = portfolio?.items || [];
+  const hasFunds = fundItems.length > 0;
 
-  const handleAddRow = () => {
-    setEditItems(prev => [...prev, {
-      key: 'manual_' + Date.now(), stock_code: '', stock_name: '',
-      asset_type: 'stock', quantity: 0, cost_price: 0, current_price: 0,
-    }]);
-    setHasChanges(true);
-  };
+  // Compute totals
+  const totalHoldingAmount = fundItems.reduce((sum, f) => sum + (f.holding_amount || 0), 0);
+  const totalHoldingReturn = fundItems.reduce((sum, f) => sum + (f.holding_return || 0), 0);
+  const totalCostAmount = fundItems.reduce((sum, f) => sum + (f.cost_amount || 0), 0);
+  const totalReturnRate = computeReturnRate(totalHoldingReturn, totalCostAmount);
+  const totalDailyReturn = fundItems.reduce((sum, f) => sum + (f.daily_return || 0), 0);
 
-  const handleRemoveRow = (key: string) => {
-    setEditItems(prev => prev.filter(item => item.key !== key));
-    setHasChanges(true);
-  };
-
-  const columns = [
-    { title: '代码', dataIndex: 'stock_code', width: 90, render: (_: any, r: EditableItem) => (
-      <Input size="small" value={r.stock_code} onChange={e => handleItemChange(r.key, 'stock_code', e.target.value)} placeholder="选填" style={{ width: 80 }} />
-    )},
-    { title: '名称', dataIndex: 'stock_name', width: 100, render: (_: any, r: EditableItem) => (
-      <Input size="small" value={r.stock_name} onChange={e => handleItemChange(r.key, 'stock_name', e.target.value)} placeholder="必填" style={{ width: 90 }} />
-    )},
-    { title: '类型', dataIndex: 'asset_type', width: 70, render: (_: any, r: EditableItem) => (
-      <Select size="small" value={r.asset_type} onChange={v => handleItemChange(r.key, 'asset_type', v)} style={{ width: 65 }}
-        options={[{ label: '股票', value: 'stock' }, { label: 'ETF', value: 'etf' }, { label: '基金', value: 'fund' }]} />
-    )},
-    { title: '数量', dataIndex: 'quantity', width: 70, render: (_: any, r: EditableItem) => (
-      <InputNumber size="small" value={r.quantity} onChange={v => handleItemChange(r.key, 'quantity', v || 0)} style={{ width: 65 }} min={0} />
-    )},
-    { title: '成本价', dataIndex: 'cost_price', width: 70, render: (_: any, r: EditableItem) => (
-      <InputNumber size="small" value={r.cost_price} onChange={v => handleItemChange(r.key, 'cost_price', v || 0)} style={{ width: 65 }} min={0} precision={3} />
-    )},
-    { title: '', width: 30, render: (_: any, r: EditableItem) => (
-      <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => handleRemoveRow(r.key)} danger />
-    )},
-  ];
-
-  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
+  if (loading) return <div style={{ textAlign: "center", padding: 40 }}><Spin /></div>;
 
   return (
-    <div style={{ padding: 12 }}>
-      {portfolio && portfolio.items && portfolio.items.length > 0 && (
-        <Card size="small" style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <Statistic title="总市值" value={portfolio.total_value} precision={0} suffix="元" valueStyle={{ fontSize: 14 }} />
-            <Statistic title="总盈亏" value={portfolio.total_profit} precision={0} suffix="元"
-              valueStyle={{ fontSize: 14, color: portfolio.total_profit >= 0 ? '#cf1322' : '#3f8600' }} />
-            <Statistic title="收益率" value={portfolio.total_profit_pct} precision={2} suffix="%"
-              valueStyle={{ fontSize: 14, color: portfolio.total_profit >= 0 ? '#cf1322' : '#3f8600' }} />
-          </div>
-        </Card>
+    <div style={{ padding: "0 12px 12px" }}>
+      {/* Action bar */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 4px", gap: 8,
+      }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handleFileSelect}
+          />
+          <Button
+            icon={ocrLoading ? <LoadingOutlined /> : <CameraOutlined />}
+            onClick={() => fileInputRef.current?.click()}
+            loading={ocrLoading}
+            size="middle"
+          >
+            从相册选择
+          </Button>
+        </div>
+        {hasFunds && (
+          <Popconfirm title="确定清空所有基金持仓？" onConfirm={handleClearAll} okText="确定" cancelText="取消">
+            <Button size="small" danger icon={<DeleteOutlined />}>清空</Button>
+          </Popconfirm>
+        )}
+      </div>
+
+      {ocrLoading && (
+        <div style={{
+          textAlign: "center", padding: "24px 12px",
+          background: "var(--bg-secondary)", borderRadius: 12,
+          border: "1px solid var(--border-color)", marginBottom: 8,
+        }}>
+          <Spin size="large" />
+          <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>正在识别图片中的基金持仓...</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>使用 OCR + AI 解析，请稍候</div>
+        </div>
       )}
 
-      {risk && (risk.sharpe_ratio !== null || risk.max_drawdown !== null) && (
-        <Card size="small" style={{ marginBottom: 12, background: '#fafafa' }}>
-          <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>风险分析</div>
-          <div style={{ display: 'flex', gap: 24 }}>
-            {risk.sharpe_ratio !== null && (
-              <Statistic title="夏普比率" value={risk.sharpe_ratio} precision={2}
-                valueStyle={{ fontSize: 14, color: risk.sharpe_ratio >= 1 ? '#3f8600' : risk.sharpe_ratio >= 0 ? '#333' : '#cf1322' }} />
-            )}
-            {risk.max_drawdown !== null && (
-              <Statistic title="最大回撤" value={risk.max_drawdown} precision={2} suffix="%"
-                valueStyle={{ fontSize: 14, color: risk.max_drawdown <= 20 ? '#3f8600' : risk.max_drawdown <= 40 ? '#faad14' : '#cf1322' }} />
-            )}
-          </div>
-        </Card>
-      )}
-      {risk?.message && <div style={{ fontSize: 11, color: '#bbb', marginBottom: 8 }}>{risk.message}</div>}
-
-      {editItems.length > 0 && (
-        <>
-          <Table dataSource={editItems} columns={columns} size="small" pagination={false} scroll={{ x: 420 }} style={{ marginBottom: 8 }} />
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Button size="small" icon={<PlusOutlined />} onClick={handleAddRow}>添加</Button>
-            <Space>
-              {portfolio && portfolio.items && portfolio.items.length > 0 && (
-                <Popconfirm title="确定清空持仓？" onConfirm={handleClear} okText="确定" cancelText="取消">
-                  <Button size="small" danger icon={<DeleteOutlined />}>清空</Button>
-                </Popconfirm>
+      {/* Total summary card */}
+      {hasFunds && (
+        <Card
+          className="card-hover"
+          size="small"
+          style={{
+            marginBottom: 12, borderRadius: 12,
+            border: "1px solid var(--border-color)",
+            background: "var(--bg-secondary)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ textAlign: "center", flex: 1, minWidth: 80 }}>
+              <Text style={{ fontSize: 11, color: "var(--text-muted)" }}>基金数</Text>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>
+                {fundItems.length} 只
+              </div>
+            </div>
+            <div style={{ textAlign: "center", flex: 1, minWidth: 80 }}>
+              <Text style={{ fontSize: 11, color: "var(--text-muted)" }}>持有金额</Text>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>
+                ¥{formatMoney(totalHoldingAmount)}
+              </div>
+            </div>
+            <div style={{ textAlign: "center", flex: 1, minWidth: 80 }}>
+              <Text style={{ fontSize: 11, color: "var(--text-muted)" }}>当日收益</Text>
+              <div style={{
+                fontSize: 18, fontWeight: 700, marginTop: 2,
+                color: totalDailyReturn >= 0 ? "#cf1322" : "#3f8600",
+              }}>
+                {totalDailyReturn >= 0 ? "+" : ""}¥{formatMoney(totalDailyReturn)}
+              </div>
+            </div>
+            <div style={{ textAlign: "center", flex: 1, minWidth: 80 }}>
+              <Text style={{ fontSize: 11, color: "var(--text-muted)" }}>累计收益</Text>
+              <div style={{
+                fontSize: 18, fontWeight: 700, marginTop: 2,
+                color: totalHoldingReturn >= 0 ? "#cf1322" : "#3f8600",
+              }}>
+                {totalHoldingReturn >= 0 ? "+" : ""}¥{formatMoney(totalHoldingReturn)}
+              </div>
+              {totalReturnRate != null && (
+                <div style={{
+                  fontSize: 11,
+                  color: totalReturnRate >= 0 ? "#cf1322" : "#3f8600",
+                }}>
+                  {totalReturnRate >= 0 ? "+" : ""}{totalReturnRate.toFixed(2)}%
+                </div>
               )}
-              <Button type="primary" size="small" icon={<SaveOutlined />} onClick={handleSave} disabled={!hasChanges}>保存</Button>
-            </Space>
-          </Space>
-        </>
+            </div>
+          </div>
+        </Card>
       )}
 
-      {editItems.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 20, color: '#999' }}>
-          <p>暂无持仓数据</p>
-          <Button size="small" icon={<PlusOutlined />} onClick={handleAddRow}>手动添加</Button>
+      {/* Fund cards */}
+      {hasFunds && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {fundItems.map((fund) => {
+            const returnRate = computeReturnRate(fund.holding_return || 0, fund.cost_amount || 0);
+            const dailyReturnVal = fund.daily_return || 0;
+            const dailyReturnPct = fund.daily_return_pct || 0;
+            const isPositive = (fund.holding_return || 0) >= 0;
+            const dailyPositive = dailyReturnVal >= 0;
+
+            return (
+              <Card
+                key={fund.id}
+                className="card-hover"
+                size="small"
+                style={{
+                  borderRadius: 12, border: "1px solid var(--border-color)",
+                  background: "var(--bg-secondary)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
+                  {/* Fund name + holding amount */}
+                  <div style={{ flex: 2, minWidth: 0, paddingRight: 8, borderRight: "1px solid var(--border-color)" }}>
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 14, color: "var(--text-primary)",
+                        display: "block", lineHeight: "20px",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}
+                    >
+                      {fund.stock_name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      持有 ¥{formatMoney(fund.holding_amount)}
+                    </Text>
+                    {fund.sector && (
+                      <div style={{
+                        marginTop: 4, display: "inline-block",
+                        padding: "1px 8px", borderRadius: 10,
+                        background: "var(--bg-sidebar)",
+                        fontSize: 10, color: "var(--text-secondary)",
+                      }}>
+                        {fund.sector}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Daily return */}
+                  <div style={{
+                    flex: 1.5, minWidth: 80,
+                    textAlign: "center", padding: "0 8px",
+                    borderRight: "1px solid var(--border-color)",
+                    display: "flex", flexDirection: "column", justifyContent: "center",
+                  }}>
+                    <div style={{
+                      fontSize: 16, fontWeight: 700,
+                      color: dailyPositive ? "#cf1322" : "#3f8600",
+                    }}>
+                      {dailyPositive ? "+" : ""}¥{formatMoney(dailyReturnVal)}
+                    </div>
+                    <div style={{
+                      fontSize: 11, marginTop: 2,
+                      color: dailyPositive ? "#cf1322" : "#3f8600",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+                    }}>
+                      {dailyPositive ? <ArrowUpOutlined style={{ fontSize: 10 }} /> : <ArrowDownOutlined style={{ fontSize: 10 }} />}
+                      {dailyReturnPct >= 0 ? "+" : ""}{dailyReturnPct.toFixed(2)}%
+                    </div>
+                  </div>
+
+                  {/* Holding return */}
+                  <div style={{
+                    flex: 1.5, minWidth: 80,
+                    textAlign: "center", padding: "0 8px",
+                    display: "flex", flexDirection: "column", justifyContent: "center",
+                  }}>
+                    <div style={{
+                      fontSize: 16, fontWeight: 700,
+                      color: isPositive ? "#cf1322" : "#3f8600",
+                    }}>
+                      {isPositive ? "+" : ""}¥{formatMoney(fund.holding_return)}
+                    </div>
+                    <div style={{
+                      fontSize: 11, marginTop: 2,
+                      color: isPositive ? "#cf1322" : "#3f8600",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+                    }}>
+                      {returnRate != null
+                        ? <>{returnRate >= 0 ? "+" : ""}{returnRate.toFixed(2)}%</>
+                        : "-"}
+                    </div>
+                  </div>
+
+                  {/* Delete */}
+                  <div style={{
+                    display: "flex", alignItems: "center", paddingLeft: 6,
+                  }}>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleRemoveFund(fund.id)}
+                    />
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!hasFunds && !ocrLoading && (
+        <div style={{
+          textAlign: "center", padding: "40px 20px",
+          background: "var(--bg-secondary)", borderRadius: 12,
+          border: "1px dashed var(--border-color)",
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📷</div>
+          <Text style={{ fontSize: 14, color: "var(--text-primary)", display: "block" }}>
+            暂无基金持仓
+          </Text>
+          <Text style={{ fontSize: 12, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+            截图你的基金持仓页面，一键导入识别
+          </Text>
         </div>
       )}
     </div>

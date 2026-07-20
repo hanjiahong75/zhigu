@@ -4,16 +4,23 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..models.database import get_db, SessionLocal
 from ..models.stock import WatchlistItem, AnalysisCache, ChatThread, ChatMessage, PortfolioItem
-from ..services.stock_data import search_stocks, get_realtime_quote, get_kline_data, get_market_indices, get_intraday
+from ..services.stock_data import search_stocks, get_realtime_quote, get_kline_data, get_market_indices, get_intraday, get_news, search_funds, get_fund_nav, get_fund_recommendations, get_fund_holdings, get_global_indices
 from ..services.ai_analysis import get_analysis, summarize_kline
 from ..services.technical import calc_all_indicators
 from ..services.retrieval import build_context_prompt
 from ..services.memory import store_memory
 from ..services.summarizer import should_summarize, generate_summary
 from ..services.chat_service import chat_full, generate_title, chat_full_stream, chat_agent, chat_agent_stream
+from ..services.auth_service import create_user, authenticate_user, update_profile, change_password, get_user_by_id, create_access_token
+from ..services.user_profile_service import get_or_create_profile, update_profile, build_profile_context
+from ..services.global_data import (
+    get_global_quote, search_global_stocks, get_global_kline,
+    get_global_indicators, get_global_indices as _get_global_indices,
+)
+from ..services.global_symbols import search_popular
 from ..services.portfolio_service import (
     recognize_portfolio, update_current_prices, get_portfolio_with_prices, calc_portfolio_risk,
-    build_portfolio_context, save_portfolio_items, delete_portfolio
+    build_portfolio_context, save_portfolio_items, delete_portfolio, calc_portfolio_diagnosis
 )
 from ..config import DEEPSEEK_API_KEY, WECHAT_WEBHOOK_API_KEY, CHAT_TIMEOUT_SECONDS, setup_wechat_logging
 import json
@@ -26,6 +33,22 @@ import hashlib
 import time
 
 router = APIRouter(prefix='/api')
+# Simple in-memory cache for quotes (5s TTL)
+_quote_simple_cache: dict = {}
+_quote_simple_cache_ts: dict = {}
+
+def _get_cached_quote(code: str, market: str):
+    key = f"{code}:{market}"
+    now = __import__("time").time()
+    if key in _quote_simple_cache and _quote_simple_cache_ts.get(key, 0) > now - 5:
+        return _quote_simple_cache[key]
+    return None
+
+def _set_cached_quote(code: str, market: str, data):
+    key = f"{code}:{market}"
+    _quote_simple_cache[key] = data
+    _quote_simple_cache_ts[key] = __import__("time").time()
+
 
 # --- Phase 5: WeChat webhook router (no /api prefix) ---
 wechat_router = APIRouter()
@@ -49,13 +72,26 @@ class ChatRequest(BaseModel):
 class PortfolioItemUpdate(BaseModel):
     stock_code: str
     stock_name: str
-    asset_type: str = "stock"
+    asset_type: str = "fund"
     quantity: float = 0
     cost_price: float = 0
     current_price: float = 0
+    holding_amount: float = 0
+    cost_amount: float = 0
+    holding_return: float = 0
+    daily_return: float = 0
+    daily_return_pct: float = 0
+    sector: str = ""
 
 class PortfolioUpdateRequest(BaseModel):
     items: list[PortfolioItemUpdate]
+
+
+class UserProfileUpdate(BaseModel):
+    investment_style: str | None = None
+    risk_preference: str | None = None
+    focus_industries: str | None = None
+    focus_stocks: str | None = None
 
 # --- Phase 5: OpenAI-compatible Pydantic models ---
 class ChatCompletionMessage(BaseModel):
@@ -72,8 +108,26 @@ class ChatCompletionRequest(BaseModel):
 # --- Stock endpoints ---
 @router.get('/search')
 def api_search(keyword: str = Query(..., min_length=1)):
-    results = search_stocks(keyword)
-    return {'results': results}
+    results = search_stocks(keyword)  # A-shares
+    # Also search global popular stocks (static list, instant)
+    for mkt in ['kr', 'jp', 'us', 'hk']:
+        try:
+            for s in search_popular(keyword, mkt):
+                results.append({
+                    'code': s['code'], 'name': s['name'],
+                    'market': mkt,
+                })
+        except Exception:
+            pass
+    # Deduplicate by code+name
+    seen = set()
+    deduped = []
+    for r in results:
+        key = (r['code'], r.get('name', ''))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    return {'results': deduped[:20]}
 
 
 @router.get('/indices')
@@ -82,11 +136,69 @@ def api_indices():
     return {'indices': indices}
 
 
+@router.get('/global-indices')
+async def api_global_indices():
+    """Get global market indices grouped by country."""
+    return get_global_indices()
+
+@router.get('/news')
+async def api_news(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=50)):
+    """Get financial news from Sina Finance."""
+    return get_news(page=page, limit=limit)
+
+@router.get('/funds/search')
+async def api_fund_search(keyword: str = Query('', min_length=1)):
+    """Search OTC funds by code, name, or pinyin."""
+    return search_funds(keyword)
+
+@router.get('/funds/nav')
+async def api_fund_nav(code: str = Query(..., min_length=6)):
+    """Get fund NAV history and period returns."""
+    result = get_fund_nav(code)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+@router.get('/funds/recommend')
+async def api_fund_recommend():
+    """Get fund recommendations across 5 categories (Agent-curated, randomized top performers)."""
+    return get_fund_recommendations()
+
+@router.get('/funds/holdings')
+async def api_fund_holdings(code: str = Query(..., min_length=6)):
+    """Get latest quarter stock holdings and industry allocation."""
+    return get_fund_holdings(code)
+
 @router.get('/quote')
 def api_quote(code: str = Query(...), market: str = Query('sz')):
+    # Check cache first
+    cached = _get_cached_quote(code, market)
+    if cached is not None:
+        return cached
+
     quote = get_realtime_quote(code, market)
+    if quote is None and "." in code:
+        # Fallback to cached global indices for codes like "100.HSI"
+        try:
+            cached = get_global_indices()
+            for group in cached:
+                for idx in group["indices"]:
+                    if idx["code"] == code:
+                        p = idx["price"]
+                        quote = {
+                            "code": code, "name": idx["name"],
+                            "price": p, "change_pct": idx["change_pct"], "change_amount": 0,
+                            "volume": 0, "amount": 0,
+                            "high": p, "low": p, "open": p, "pre_close": p,
+                            "turnover": 0,
+                        }
+                        break
+        except Exception:
+            pass
     if quote is None:
+        _set_cached_quote(code, market, None)
         raise HTTPException(status_code=404, detail='Stock not found')
+    _set_cached_quote(code, market, quote)
     return quote
 
 
@@ -97,13 +209,14 @@ def api_kline(code: str = Query(...), market: str = Query('sz'), days: int = Que
 
 
 @router.get("/intraday")
-def api_intraday(code: str = Query(...), date: str = Query("")):
-    data = get_intraday(code, date)
+def api_intraday(code: str = Query(...), date: str = Query(""), klt: str = Query("5")):
+    data = get_intraday(code, date, klt)
     if not data:
-        raise HTTPException(status_code=404, detail="No intraday data")
-    return {"bars": data, "date": data[0]["time"][:10] if data else date,
-            "synthetic": data[0].get("avg_price", 0) > 0 if data else False}
-
+        return {"bars": [], "date": date, "synthetic": False, "empty": True}
+    fallback = data[0].get("fallback_date", "")
+    return {"bars": data, "date": fallback or data[0]["time"][:10],
+            "synthetic": bool(fallback),
+            "fallback_date": fallback}
 
 @router.get('/indicators')
 def api_indicators(code: str = Query(...), market: str = Query('sz'), days: int = Query(60), klt: str = Query('101')):
@@ -129,7 +242,7 @@ async def api_analyze(
     if quote is None:
         raise HTTPException(status_code=404, detail='Stock not found')
 
-    kline = get_kline_data(code, market, 120, klt)
+    kline = get_kline_data(code, market, 10000, klt)
     summary = summarize_kline(kline)
     indicators = calc_all_indicators(kline) if klt == '101' else {}
 
@@ -307,6 +420,81 @@ def api_chat_thread_delete(thread_id: str, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+
+# --- Auth endpoints ---
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    nickname: str = ""
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@router.post('/auth/register')
+def api_register(req: RegisterRequest, db: Session = Depends(get_db)):
+    """Register a new user."""
+    if len(req.username) < 3:
+        raise HTTPException(status_code=400, detail="用户名至少3位")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少6位")
+    user = create_user(db, req.username, req.password, req.nickname)
+    if not user:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+    token = create_access_token({"sub": str(user.id), "username": user.username})
+    return {
+        "token": token,
+        "user": {"id": user.id, "username": user.username, "nickname": user.nickname},
+    }
+
+
+@router.post('/auth/login')
+def api_login(req: LoginRequest, db: Session = Depends(get_db)):
+    """Login and get JWT token."""
+    user = authenticate_user(db, req.username, req.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    token = create_access_token({"sub": str(user.id), "username": user.username})
+    return {
+        "token": token,
+        "user": {"id": user.id, "username": user.username, "nickname": user.nickname, "avatar": user.avatar},
+    }
+
+
+@router.get('/auth/profile')
+def api_get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
+    """Get user profile."""
+    profile = get_user_by_id(db, user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return profile
+
+
+@router.put('/auth/profile')
+def api_update_profile(user_id: int = Query(...), nickname: str = Query(None),
+                       db: Session = Depends(get_db)):
+    """Update nickname."""
+    ok = update_profile(db, user_id, nickname=nickname)
+    if not ok:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return {"ok": True}
+
+
+@router.post('/auth/change-password')
+def api_change_password(req: ChangePasswordRequest, user_id: int = Query(...),
+                        db: Session = Depends(get_db)):
+    """Change password."""
+    ok, msg = change_password(db, user_id, req.old_password, req.new_password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"ok": True, "message": msg}
+
 # --- Watchlist endpoints ---
 @router.get('/watchlist')
 def api_watchlist(db: Session = Depends(get_db)):
@@ -331,8 +519,14 @@ def api_add_watchlist(code: str = Query(...), name: str = Query(...), market: st
 @router.get('/watchlist/quotes')
 def api_watchlist_quotes(codes: list[str] = Query(...)):
     results = []
+    # Known index codes and their markets
+    INDEX_CODES = {"000001": "sh", "000300": "sh", "000688": "sh", "399001": "sz", "399006": "sz"}
     for code in codes:
-        q = get_realtime_quote(code)
+        if code in INDEX_CODES:
+            market = INDEX_CODES[code]
+        else:
+            market = "sh" if code.startswith(("6", "9")) else "sz"
+        q = get_realtime_quote(code, market)
         if q:
             results.append(q)
     return results
@@ -364,6 +558,78 @@ def api_remove_watchlist(code: str = Query(...), db: Session = Depends(get_db)):
         item.is_active = False
         db.commit()
     return {'ok': True}
+
+
+# --- User profile endpoints ---
+
+@router.get('/user/profile')
+def api_get_user_profile(db: Session = Depends(get_db)):
+    """Get user investment profile."""
+    profile = get_or_create_profile(db)
+    return {
+        "investment_style": profile.investment_style,
+        "risk_preference": profile.risk_preference,
+        "focus_industries": profile.focus_industries,
+        "focus_stocks": profile.focus_stocks,
+    }
+
+
+@router.put('/user/profile')
+def api_update_user_profile(req: UserProfileUpdate, db: Session = Depends(get_db)):
+    """Update user investment profile."""
+    profile = update_profile(
+        db,
+        investment_style=req.investment_style,
+        risk_preference=req.risk_preference,
+        focus_industries=req.focus_industries,
+        focus_stocks=req.focus_stocks,
+    )
+    return {"ok": True, "investment_style": profile.investment_style}
+
+
+# --- Global market endpoints ---
+
+@router.get('/global/search')
+def api_global_search(keyword: str, market: str = "hk"):
+    """Search global stocks."""
+    results = search_global_stocks(keyword, market)
+    return {"results": results}
+
+
+@router.get('/global/quote')
+def api_global_quote(code: str, market: str = "hk"):
+    """Get global stock quote."""
+    quote = get_global_quote(code, market)
+    if not quote:
+        raise HTTPException(status_code=404, detail=f"Quote not found for {market}:{code}")
+    return quote
+
+
+@router.get('/global/kline')
+def api_global_kline(code: str, market: str = "hk", days: int = 120):
+    """Get global stock K-line data."""
+    kline = get_global_kline(code, market, days)
+    return {"kline": kline}
+
+
+@router.get('/global/indicators')
+def api_global_indicators(code: str, market: str = "hk", days: int = Query(60), klt: str = Query("101")):
+    """Get global stock K-line + technical indicators."""
+    kline = get_global_kline(code, market, days, klt)
+    if not kline:
+        # Fallback: return TradingView snapshot
+        tv = get_global_indicators(code, market)
+        return {"kline": [], "indicators": tv}
+    from ..services.technical import calc_all_indicators
+    indicators = calc_all_indicators(kline)
+    return {"kline": kline, "indicators": indicators}
+
+
+@router.get('/global/indices')
+def api_global_indices():
+    """Get global market indices."""
+    indices = _get_global_indices()
+    return {"indices": indices}
 
 
 # --- Portfolio endpoints ---
@@ -416,6 +682,28 @@ def api_portfolio_risk(db: Session = Depends(get_db)):
     """Get portfolio risk metrics: Sharpe ratio and max drawdown."""
     risk = calc_portfolio_risk(db)
     return risk
+
+@router.get('/portfolio/diagnosis')
+def api_portfolio_diagnosis(db: Session = Depends(get_db)):
+    """Get portfolio diagnosis: concentration, per-item signal lights, summary."""
+    diagnosis = calc_portfolio_diagnosis(db)
+    return diagnosis
+
+
+@router.get('/alerts')
+def api_get_alerts():
+    """Get latest monitor alerts from alerts.json."""
+    import json as _json
+    from pathlib import Path as _Path
+    alerts_file = _Path(__file__).resolve().parent.parent.parent / "data" / "alerts.json"
+    if not alerts_file.exists():
+        return {"alerts": [], "updated_at": None}
+    try:
+        with open(alerts_file, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {"alerts": [], "updated_at": None}
+
 
 @router.delete('/portfolio')
 def api_delete_portfolio(db: Session = Depends(get_db)):
@@ -672,6 +960,7 @@ async def _persist_stream_message(
         logger.error(f"PERSIST error thread={thread_id}: {e}")
     finally:
         db.close()
+
 
 
 

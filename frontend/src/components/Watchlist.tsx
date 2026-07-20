@@ -79,7 +79,7 @@ export default function Watchlist({ onSelect, refreshTrigger, quotes, alerts }: 
             const q = getQuote(item.code);
             const alert = isAlerting(item.code);
             return (
-              <List.Item
+              <List.Item className="watchlist-item chat-bubble-assistant"
                 style={{
                   cursor: "pointer",
                   padding: "6px 8px",
@@ -144,3 +144,5 @@ export default function Watchlist({ onSelect, refreshTrigger, quotes, alerts }: 
     </div>
   );
 }
+
+

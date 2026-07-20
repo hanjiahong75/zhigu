@@ -14,6 +14,8 @@ from .technical import calc_all_indicators
 from .retrieval import build_context_prompt
 from .memory import store_memory
 from .portfolio_service import build_portfolio_context
+from ..prompts import detect_engine, load_prompt
+from ..services.user_profile_service import build_profile_context as _build_profile
 from ..config import MAX_HISTORY_PAIRS
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
@@ -22,16 +24,27 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 TRUNCATION_SUFFIX = "…[回复过长已截断]"
 MAX_RESPONSE_UTF8_BYTES = 2000
 
-CHAT_SYSTEM_PROMPT = """你是"知股"，一位专业、简洁的A股智能投研助手。
+CHAT_SYSTEM_PROMPT = """你是"知股"，一位专业、严谨的A股智能投研助手。
 
-你的特点：
-- 回答精准、不啰嗦，用数据和逻辑说话
-- 回答控制在500字以内，关键结论用**加粗**标出
-- 不推荐具体买卖操作，只给分析参考
-- 不说"作为AI"等套话，直接给结论
-- 友好但保持专业
+## 输出铁律（不可违反）
 
-能力范围：A股个股分析、市场指数概况、板块研判、投资知识科普"""
+### 格式规范
+1. **结论先行**：每条回答首句必须是你的核心判断
+2. **数据必带分析**：每给出一个数据点，必须紧跟一句分析说明它意味着什么。禁止只罗列数字不给解读
+3. **引用来源**：引用数据时标注 [来源: xxx]
+
+### 红线
+1. 永远不输出"建议买入/卖出/持有/加仓/减仓"等操作指令
+2. 永远不给精确目标价，改用定性描述（如"前期密集成交区附近"）
+3. 数据缺失时明确说"该维度数据不足，无法判断"，禁止用"通常/一般"等词猜测
+
+### 合规声明（每条分析末尾必须附加）
+> 以上内容由 AI 基于公开数据生成，不构成任何投资建议。请充分评估自身风险承受能力，自行投资决策并独立承担投资风险。
+
+## 回答风格
+- 精准简洁（500字以内），关键结论用**加粗**标出
+- 正面信号和反面风险并列呈现
+- 能力范围：A股个股分析、市场指数概况、板块研判、投资知识科普"""
 
 STOCK_INTENT_PROMPT = """分析用户消息,判断是否涉及具体A股股票查询。
 如果涉及,提取股票名称或代码。如果不涉及,返回null。
@@ -90,6 +103,48 @@ def _truncate_response(text: str) -> str:
     return truncated + TRUNCATION_SUFFIX
 
 
+# Red-line violation patterns → weak-bias replacement
+_SANITIZE_RULES = [
+    # Operation commands (specific patterns first)
+    (r"强烈建议买入", "当前技术面呈现积极信号，"),
+    (r"强烈建议卖出", "当前风险信号较强，"),
+    (r"强烈建议持有", "综合来看暂无明显方向信号，"),
+    (r"强烈建议", "综合来看"),
+    (r"建议买入", "呈现积极信号"),
+    (r"建议卖出", "呈现风险信号"),
+    (r"建议持有", "当前暂无明显方向信号"),
+    (r"建议加仓", "若看好可关注"),
+    (r"建议减仓", "若担忧可关注风险"),
+    (r"建议清仓", "风险信号较强"),
+    (r"可以买入", "技术面呈现"),
+    (r"可以卖出", "风险面呈现"),
+    (r"推荐买入", "值得关注"),
+    (r"推荐卖出", "需警惕"),
+    # Price targets
+    (r"目标价[^\d]*\d+[\.\d]*\s*元?", "估值参考区间"),
+    (r"支撑位[^\d]*\d+[\.\d]*", "前期密集成交区附近"),
+    (r"压力位[^\d]*\d+[\.\d]*", "上方密集成交区附近"),
+    (r"止损[^\d]*\d+[\.\d]*", "风险控制参考位"),
+    # Hallucination indicators (specific patterns first)
+    (r"根据历史经验", "从数据来看"),
+    (r"一般来说", "从当前数据来看"),
+    (r"通常情况下", "当前数据显示"),
+    (r"通常情况", "当前数据显示"),
+    (r"通常来说", "当前来看"),
+    (r"通常来看", "当前来看"),
+    (r"大概率", "可能"),
+    (r"通常", "当前数据"),
+]
+
+def _sanitize_response(text: str) -> str:
+    """Post-process LLM output to catch and fix remaining red-line violations."""
+    import re
+    sanitized = text
+    for pattern, replacement in _SANITIZE_RULES:
+        sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+    return sanitized
+
+
 async def chat_full(
     user_message: str,
     conversation_history: list[dict] = None,
@@ -124,7 +179,7 @@ async def chat_full(
 
             try:
                 quote = get_realtime_quote(code, market)
-                kline = get_kline_data(code, market, 120, "101")
+                kline = get_kline_data(code, market, 10000, "101")
                 indicators = calc_all_indicators(kline) if kline else {}
                 indicator_summary = build_indicator_summary(indicators)
                 kline_summary = summarize_kline(kline) if kline else ""
@@ -301,7 +356,7 @@ async def chat_full_stream(
 
                 try:
                     quote = get_realtime_quote(code, market)
-                    kline = get_kline_data(code, market, 120, "101")
+                    kline = get_kline_data(code, market, 10000, "101")
                     indicators = calc_all_indicators(kline) if kline else {}
                     indicator_summary = build_indicator_summary(indicators)
                     kline_summary = summarize_kline(kline) if kline else ""
@@ -343,6 +398,13 @@ async def chat_full_stream(
 
     system_prompt = STREAM_SYSTEM_PROMPT
     if db:
+        try:
+            # Inject user profile for R10 appropriateness
+            profile_context = _build_profile(db)
+            if profile_context:
+                system_prompt += f"\n\n{profile_context}"
+        except Exception:
+            pass
         try:
             portfolio_context = build_portfolio_context(db)
             if portfolio_context:
@@ -418,7 +480,7 @@ async def chat_full_stream(
 
     # --- Phase 4: Truncate if too long ---
     if full_reply:
-        full_reply = _truncate_response(full_reply)
+        full_reply = _sanitize_response(_truncate_response(full_reply))
 
     yield _sse_done()
 
@@ -444,7 +506,26 @@ async def chat_agent(
         return {"reply": "**错误**：未配置 DeepSeek API Key", "type": "error"}
 
     system_prompt = AGENT_SYSTEM_PROMPT
+
+    # Inject analysis engine template based on user intent
+    engine = detect_engine(user_message)
+    if engine == "combined":
+        combined = load_prompt("combined")
+        if combined:
+            system_prompt += f"\n\n{combined}"
+    elif engine:
+        template = load_prompt(engine)
+        if template:
+            system_prompt += f"\n\n## 分析引擎指引\n{template}"
+
     if db:
+        try:
+            # Inject user profile for R10 appropriateness
+            profile_context = _build_profile(db)
+            if profile_context:
+                system_prompt += f"\n\n{profile_context}"
+        except Exception:
+            pass
         try:
             portfolio_context = build_portfolio_context(db)
             if portfolio_context:
@@ -458,6 +539,7 @@ async def chat_agent(
     messages.append({"role": "user", "content": user_message})
 
     logger = logging.getLogger("wechat")
+    stock_info = {"code": "", "name": "", "market": "sz"}  # Track detected stock
 
     for iteration in range(MAX_AGENT_ITERATIONS):
         logger.info(f"Agent iteration {iteration + 1}/{MAX_AGENT_ITERATIONS} thread={thread_id}")
@@ -505,6 +587,24 @@ async def chat_agent(
                 except json.JSONDecodeError:
                     args = {}
                 tool_result = execute_tool(func_name, args)
+                # Track stock info from tool calls
+                if func_name == "search_stock":
+                    try:
+                        results = json.loads(tool_result)
+                        if results and len(results) > 0:
+                            first = results[0]
+                            stock_info["code"] = first.get("code", "")
+                            stock_info["name"] = first.get("name", "")
+                            stock_info["market"] = "sh" if first.get("code", "").startswith(("6","9")) else "sz"
+                    except Exception:
+                        pass
+                elif func_name == "get_stock_quote":
+                    stock_info["code"] = args.get("code", stock_info["code"])
+                    stock_info["name"] = args.get("name", stock_info.get("name", ""))
+                    stock_info["market"] = args.get("market", stock_info.get("market", "sz"))
+                elif func_name == "get_kline_data" or func_name == "get_technical_indicators" or func_name == "get_portfolio_risk":
+                    stock_info["code"] = args.get("code", stock_info["code"])
+                    stock_info["market"] = args.get("market", stock_info.get("market", "sz"))
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -516,7 +616,27 @@ async def chat_agent(
             reply = message.get("content", "")
             if not reply:
                 reply = "抱歉，我暂时无法回答这个问题，请换个方式提问。"
-            return {"reply": reply, "type": "general"}
+            # If a stock was mentioned, attach market data
+            response = {"reply": reply, "type": "general"}
+            if stock_info["code"]:
+                try:
+                    from .stock_data import get_realtime_quote, get_kline_data
+                    from .technical import calc_all_indicators
+                    quote = get_realtime_quote(stock_info["code"], stock_info["market"])
+                    kline = get_kline_data(stock_info["code"], stock_info["market"], 10000)
+                    indicators = calc_all_indicators(kline) if kline else None
+                    response.update({
+                        "type": "stock",
+                        "stock_code": stock_info["code"],
+                        "stock_name": stock_info["name"] or (quote["name"] if quote else stock_info["code"]),
+                        "market": stock_info["market"],
+                        "quote": quote,
+                        "kline": kline,
+                        "indicators": indicators,
+                    })
+                except Exception:
+                    pass
+            return response
 
     # Exhausted iterations without final answer
     return {"reply": "分析过程较长，请稍后重新提问（可尝试简化问题）", "type": "error"}
@@ -549,7 +669,26 @@ async def chat_agent_stream(
         return
 
     system_prompt = AGENT_SYSTEM_PROMPT
+
+    # Inject analysis engine template based on user intent
+    engine = detect_engine(user_message)
+    if engine == "combined":
+        combined = load_prompt("combined")
+        if combined:
+            system_prompt += f"\n\n{combined}"
+    elif engine:
+        template = load_prompt(engine)
+        if template:
+            system_prompt += f"\n\n## 分析引擎指引\n{template}"
+
     if db:
+        try:
+            # Inject user profile for R10 appropriateness
+            profile_context = _build_profile(db)
+            if profile_context:
+                system_prompt += f"\n\n{profile_context}"
+        except Exception:
+            pass
         try:
             portfolio_context = build_portfolio_context(db)
             if portfolio_context:
@@ -610,6 +749,24 @@ async def chat_agent_stream(
                 except json.JSONDecodeError:
                     args = {}
                 tool_result = execute_tool(func_name, args)
+                # Track stock info from tool calls
+                if func_name == "search_stock":
+                    try:
+                        results = json.loads(tool_result)
+                        if results and len(results) > 0:
+                            first = results[0]
+                            stock_info["code"] = first.get("code", "")
+                            stock_info["name"] = first.get("name", "")
+                            stock_info["market"] = "sh" if first.get("code", "").startswith(("6","9")) else "sz"
+                    except Exception:
+                        pass
+                elif func_name == "get_stock_quote":
+                    stock_info["code"] = args.get("code", stock_info["code"])
+                    stock_info["name"] = args.get("name", stock_info.get("name", ""))
+                    stock_info["market"] = args.get("market", stock_info.get("market", "sz"))
+                elif func_name == "get_kline_data" or func_name == "get_technical_indicators" or func_name == "get_portfolio_risk":
+                    stock_info["code"] = args.get("code", stock_info["code"])
+                    stock_info["market"] = args.get("market", stock_info.get("market", "sz"))
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -664,7 +821,7 @@ async def chat_agent_stream(
                     logger.error(f"Agent stream error on final: {e}")
                     yield _sse_chunk("服务暂时不可用，请稍后再试", "stop")
 
-            full_reply = _truncate_response(full_reply)
+            full_reply = _sanitize_response(_truncate_response(full_reply))
             yield _sse_done()
 
             # Metadata for persistence

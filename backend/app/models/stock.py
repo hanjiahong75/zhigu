@@ -65,8 +65,34 @@ class PortfolioItem(Base):
     portfolio_id = Column(Integer, ForeignKey('portfolios.id'), nullable=False, index=True)
     stock_code = Column(String(20), nullable=False)
     stock_name = Column(String(50), nullable=False)
-    asset_type = Column(String(20), default='stock')
+    asset_type = Column(String(20), default='fund')
     quantity = Column(Float, default=0)
     cost_price = Column(Float, default=0)
     current_price = Column(Float, default=0)
+    holding_amount = Column(Float, default=0)
+    cost_amount = Column(Float, default=0)
+    holding_return = Column(Float, default=0)
+    daily_return = Column(Float, default=0)
+    daily_return_pct = Column(Float, default=0)
+    sector = Column(String(50), default='')
     created_at = Column(DateTime, server_default=func.now())
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), nullable=False, unique=True, index=True)
+    password_hash = Column(String(128), nullable=False)
+    nickname = Column(String(50), default='')
+    avatar = Column(String(200), default='')
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+class UserProfile(Base):
+    __tablename__ = 'user_profiles'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True)
+    investment_style = Column(String(20), default='medium_term')  # short_term / medium_term / long_term
+    risk_preference = Column(String(20), default='moderate')      # conservative / moderate / aggressive
+    focus_industries = Column(String(200), default='')            # Comma-separated industry names
+    focus_stocks = Column(String(200), default='')                # Comma-separated stock codes
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

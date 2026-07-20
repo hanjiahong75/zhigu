@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { Input, List, Tag, message } from "antd";
 import { SearchOutlined, PlusOutlined } from "@ant-design/icons";
 import { searchStocks, addToWatchlist } from "../api/client";
@@ -7,9 +7,10 @@ import type { StockSearchResult } from "../types";
 interface Props {
   onSelect: (code: string, name: string, market: string) => void;
   onWatchlistChange: () => void;
+  compact?: boolean;
 }
 
-export default function StockSearch({ onSelect, onWatchlistChange }: Props) {
+export default function StockSearch({ onSelect, onWatchlistChange, compact }: Props) {
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState<StockSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -52,14 +53,15 @@ export default function StockSearch({ onSelect, onWatchlistChange }: Props) {
   };
 
   const handleSelect = (item: StockSearchResult) => {
-    const market = item.code.startsWith("6") ? "sh" : "sz";
+    // Use market from search result (kr/jp/us/hk), fallback to A-share inference
+    const market = (item as any).market || (item.code.startsWith("6") ? "sh" : "sz");
     onSelect(item.code, item.name, market);
     setKeyword(item.name);
     setShowResults(false);
   };
 
   const handleAddWatchlist = async (item: StockSearchResult) => {
-    const market = item.code.startsWith("6") ? "sh" : "sz";
+    const market = (item as any).market || (item.code.startsWith("6") ? "sh" : "sz");
     try {
       await addToWatchlist(item.code, item.name, market);
       message.success(`已添加 ${item.name} 到自选`);
@@ -72,7 +74,7 @@ export default function StockSearch({ onSelect, onWatchlistChange }: Props) {
   return (
     <div ref={containerRef} style={{ position: "relative", marginBottom: 16 }}>
       <Input
-        size="large"
+        size={compact ? "small" : "large"}
         prefix={<SearchOutlined />}
         placeholder="输入股票代码或名称，如：贵州茅台、000001..."
         value={keyword}
@@ -89,20 +91,20 @@ export default function StockSearch({ onSelect, onWatchlistChange }: Props) {
             left: 0,
             right: 0,
             zIndex: 1000,
-            background: "#fff",
-            border: "1px solid #e8e8e8",
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border-color)",
             borderRadius: 8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
             maxHeight: 320,
             overflow: "auto",
           }}
         >
           {searching ? (
-            <div style={{ padding: 16, textAlign: "center", color: "#888" }}>
+            <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)" }}>
               搜索中...
             </div>
           ) : results.length === 0 ? (
-            <div style={{ padding: 16, textAlign: "center", color: "#888" }}>
+            <div style={{ padding: 16, textAlign: "center", color: "var(--text-muted)" }}>
               无匹配结果
             </div>
           ) : (
@@ -115,7 +117,7 @@ export default function StockSearch({ onSelect, onWatchlistChange }: Props) {
                     cursor: "pointer",
                   }}
                   onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = "#f5f5f5")
+                    (e.currentTarget.style.background = "var(--thread-hover-bg)")
                   }
                   onMouseLeave={(e) =>
                     (e.currentTarget.style.background = "transparent")

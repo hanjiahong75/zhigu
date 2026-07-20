@@ -7,12 +7,15 @@ import type { KlineItem, IndicatorsData } from "../types";
 import { getIntraday, PERIODS } from "../api/client";
 
 interface Props {
+  isDark?: boolean;
   data: KlineItem[];
   stockName: string;
   stockCode: string;
   indicators?: IndicatorsData | null;
   klt: string;
   onPeriodChange: (klt: string) => void;
+  onLoadMore?: () => void;
+  prevClose?: number;
 }
 
 const MA_COLORS = ["#ff6b6b", "#ffa726", "#42a5f5", "#ab47bc"];
@@ -40,26 +43,38 @@ function toTime(dateStr: string): Time {
   return dateStr as Time;
 }
 
-const DROPDOWN_STYLE: React.CSSProperties = {
-  padding: "2px 8px", fontSize: 12, borderRadius: 6, border: "1px solid #d9d9d9",
-  background: "#fff", cursor: "pointer", outline: "none", color: "#333",
-  height: 28, minWidth: 70,
-};
+// dropdownStyle moved inside component
 
-export default function KlineChart({ data, stockName, stockCode, indicators, klt, onPeriodChange }: Props) {
+export default function KlineChart({ data, stockName, stockCode, indicators, klt, onPeriodChange, onLoadMore, isDark, prevClose: prevCloseProp }: Props) {
   const mainRef = useRef<HTMLDivElement>(null);
+  const bgColor = isDark ? "#1a1a1a" : "#ffffff";
+  const textColor = isDark ? "#d9d9d9" : "#333333";
+  const gridColor = isDark ? "#333333" : "#f0f0f0";
+  const dropdownStyle: React.CSSProperties = {
+    padding: "2px 8px", fontSize: 12, borderRadius: 6, border: "1px solid #d9d9d9",
+    background: bgColor, cursor: "pointer", outline: "none", color: textColor,
+    height: 28, minWidth: 70,
+  };
   const macdRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<ReturnType<typeof createChart>[]>([]);
+  const mainChartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const candleSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
+  const prevDataRef = useRef<KlineItem[]>([]);
+  const onLoadMoreRef = useRef(onLoadMore);
+  onLoadMoreRef.current = onLoadMore;
   const [vis, setVis] = useState<Visibility>({ ma: true, boll: true, volume: true, macd: true, rsi: true });
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [intraday, setIntraday] = useState<IntradayState | null>(null);
+  const [showIntraday, setShowIntraday] = useState(false);
+  const [todayIntraday, setTodayIntraday] = useState<IntradayState | null>(null);
 
   const toggle = (key: keyof Visibility) => setVis((v) => ({ ...v, [key]: !v[key] }));
   const btnStyle = (active: boolean, color: string) => ({
     padding: "1px 8px", fontSize: 11, borderRadius: 10, cursor: "pointer",
     border: `1px solid ${active ? color : "#e0e0e0"}`,
-    background: active ? color : "#fff", color: active ? "#fff" : "#999",
+    background: active ? color : bgColor, color: active ? "#fff" : textColor,
     transition: "all 0.15s", lineHeight: "20px", userSelect: "none" as const,
   });
 
@@ -90,18 +105,46 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     }
   }, [data, stockCode, klt]);
 
+  const fetchTodayIntraday = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setTodayIntraday((prev: IntradayState | null) => prev ? { ...prev, loading: true } : { bars: [], date: today, loading: true });
+    try {
+      const result = await getIntraday(stockCode, today, "1");
+      if (result.bars && result.bars.length > 0) {
+        setTodayIntraday({ bars: result.bars, date: result.date || today, loading: false, synthetic: result.synthetic, fallback_date: result.fallback_date || "" });
+      } else {
+        setTodayIntraday({ bars: [], date: today, loading: false, error: "今日暂无分时数据" });
+      }
+    } catch (e: any) {
+      setTodayIntraday({ bars: [], date: today, loading: false, error: e.message || "加载失败" });
+    }
+  }, [stockCode]);
+
+  // Auto-refresh intraday during trading hours (UTC+8: 9:30-11:30, 13:00-15:00)
+  useEffect(() => {
+    if (!showIntraday) return;
+    fetchTodayIntraday();
+    const timer = setInterval(() => {
+      const now = new Date();
+      const minutes = now.getHours() * 60 + now.getMinutes();
+      const isTrading = (minutes >= 570 && minutes <= 690) || (minutes >= 780 && minutes <= 900);
+      if (isTrading) fetchTodayIntraday();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [showIntraday, fetchTodayIntraday]);
+
+  const mainH = isIntraday(klt) ? 400 : 300;
+  const subH = 100;
+
   useEffect(() => {
     if (!mainRef.current || data.length === 0) return;
     chartsRef.current.forEach((c) => c.remove());
     chartsRef.current = [];
 
-    const mainH = isIntraday(klt) ? 400 : 300;
-    const subH = 100;
-
     const mainChart = createChart(mainRef.current, {
-      layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#333" },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
       width: mainRef.current.clientWidth, height: mainH,
-      grid: { vertLines: { color: "#f0f0f0" }, horzLines: { color: "#f0f0f0" } },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: {
         borderColor: "#e8e8e8",
@@ -152,13 +195,14 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     }
 
     chartsRef.current.push(mainChart);
+    mainChartRef.current = mainChart;
 
     let macdChart: ReturnType<typeof createChart> | null = null;
     if (vis.macd && macdRef.current && !isIntraday(klt)) {
       macdChart = createChart(macdRef.current, {
-        layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#333" },
+        layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
         width: macdRef.current.clientWidth, height: subH,
-        grid: { vertLines: { color: "#f0f0f0" }, horzLines: { color: "#f0f0f0" } },
+        grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
         crosshair: { mode: CrosshairMode.Normal },
         timeScale: { borderColor: "#e8e8e8", visible: false },
         rightPriceScale: { borderColor: "#e8e8e8" },
@@ -178,9 +222,9 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     let rsiChart: ReturnType<typeof createChart> | null = null;
     if (vis.rsi && rsiRef.current && !isIntraday(klt)) {
       rsiChart = createChart(rsiRef.current, {
-        layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#333" },
+        layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
         width: rsiRef.current.clientWidth, height: subH,
-        grid: { vertLines: { color: "#f0f0f0" }, horzLines: { color: "#f0f0f0" } },
+        grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
         crosshair: { mode: CrosshairMode.Normal },
         timeScale: { borderColor: "#e8e8e8", timeVisible: true },
         rightPriceScale: { borderColor: "#e8e8e8" },
@@ -203,36 +247,68 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     mainChart.timeScale().subscribeVisibleTimeRangeChange((range: any) => {
       if (range) subCharts.forEach((c) => c.timeScale().setVisibleRange(range));
     });
-    mainChart.timeScale().fitContent();
-    // For non-intraday K-lines, zoom to show the last ~60 bars initially (user can scroll left for full history)
-    if (!isIntraday(klt)) {
-      const allBars = data.length;
-      if (allBars > 60) {
-        const from = Math.max(0, allBars - 60);
-        const to = allBars - 1;
-        const fromTime = data[from]?.date;
-        const toTime = data[to]?.date;
-        if (fromTime && toTime) {
-          mainChart.timeScale().setVisibleLogicalRange({ from: from, to: to });
-        }
+
+    // Detect scroll to far left for loading earlier data
+    let loadMoreCooldown = false;
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange((range: any) => {
+      if (!range || !onLoadMoreRef.current) return;
+      // When user scrolls within 10 bars of the earliest loaded data
+      if (range.from <= 10 && !loadMoreCooldown) {
+        loadMoreCooldown = true;
+        onLoadMoreRef.current();
+        // Reset cooldown after a short delay so the next scroll can trigger again
+        setTimeout(() => { loadMoreCooldown = false; }, 1500);
       }
+    });
+    // Show only last 50 bars by default, user can scroll left for more
+    const totalBars = data.length;
+    if (totalBars > 50) {
+      mainChart.timeScale().setVisibleLogicalRange({ from: totalBars - 50, to: totalBars - 1 });
+    } else {
+      mainChart.timeScale().fitContent();
     }
 
-    const handleResize = () => {
-      const w = mainRef.current?.clientWidth ?? 600;
-      mainChart.applyOptions({ width: w });
-      subCharts.forEach((c) => c.applyOptions({ width: w }));
-    };
-    window.addEventListener("resize", handleResize);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        if (w > 0) {
+          mainChart.applyOptions({ width: w });
+          subCharts.forEach((c) => c.applyOptions({ width: w }));
+        }
+      }
+    });
+    if (mainRef.current) ro.observe(mainRef.current);
     return () => {
-      window.removeEventListener("resize", handleResize);
+      ro.disconnect();
       chartsRef.current.forEach((c) => c.remove());
       chartsRef.current = [];
     };
-  }, [data, indicators, vis, handleClick, klt]);
+  }, [data.length === 0 ? 'empty' : klt, vis, isDark]);  // Only recreate on klt/vis/dark change, NOT on data change
+
+  // Update chart data in-place when data prop changes (loadMore)
+  useEffect(() => {
+    if (!mainChartRef.current || !candleSeriesRef.current) return;
+    const candleData = data.map((d: KlineItem) => ({
+      time: toTime(d.date),
+      open: d.open, high: d.high, low: d.low, close: d.close,
+    }));
+    candleSeriesRef.current.setData(candleData);
+
+    const volData = data.map((d: KlineItem, i: number) => {
+      const prevClose = i > 0 ? data[i - 1].close : d.open;
+      return {
+        time: toTime(d.date),
+        value: d.volume,
+        color: d.close >= prevClose ? "rgba(239,68,68,0.4)" : "rgba(34,197,94,0.4)",
+      };
+    });
+    volumeSeriesRef.current.setData(volData);
+
+    prevDataRef.current = data;
+  }, [data]);
 
   if (data.length === 0) {
-    return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center", background: "#fafafa", borderRadius: 8, color: "#bbb", marginBottom: 16 }}>暂无K线数据</div>;
+    return <div style={{ height: 300, display: "flex", alignItems: "center", justifyContent: "center", background: bgColor, borderRadius: 8, color: textColor, marginBottom: 16 }}>暂无K线数据</div>;
   }
 
   const item = tooltip?.item;
@@ -242,36 +318,63 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
   return (
     <div style={{ marginBottom: 16, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{stockName} - K线图</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{stockName} - {showIntraday ? "分时图" : "K线图"}</h3>
         <select
           value={klt}
           onChange={(e) => onPeriodChange(e.target.value)}
-          style={DROPDOWN_STYLE}
+          style={dropdownStyle}
         >
           {Object.entries(PERIODS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <span style={btnStyle(vis.ma, MA_COLORS[2])} onClick={() => toggle("ma")}>MA</span>
-          <span style={btnStyle(vis.boll, BOLL_COLORS.upper)} onClick={() => toggle("boll")}>BOLL</span>
-          <span style={btnStyle(vis.volume, "#9e9e9e")} onClick={() => toggle("volume")}>量</span>
-          <span style={{ color: "#ddd", fontSize: 11, lineHeight: "22px" }}>|</span>
-          <span style={btnStyle(vis.macd, MACD_COLORS.dif)} onClick={() => toggle("macd")}>MACD</span>
-          <span style={btnStyle(vis.rsi, RSI_COLORS[0])} onClick={() => toggle("rsi")}>RSI</span>
+          <span style={btnStyle(showIntraday, "#1677ff")} onClick={() => { setShowIntraday(!showIntraday); }}>今日分时</span>
+          {!showIntraday && (
+            <>
+              <span style={{ color: "#ddd", fontSize: 11, lineHeight: "22px" }}>|</span>
+              <span style={btnStyle(vis.ma, MA_COLORS[2])} onClick={() => toggle("ma")}>MA</span>
+              <span style={btnStyle(vis.boll, BOLL_COLORS.upper)} onClick={() => toggle("boll")}>BOLL</span>
+              <span style={btnStyle(vis.volume, "#9e9e9e")} onClick={() => toggle("volume")}>量</span>
+              <span style={{ color: "#ddd", fontSize: 11, lineHeight: "22px" }}>|</span>
+              <span style={btnStyle(vis.macd, MACD_COLORS.dif)} onClick={() => toggle("macd")}>MACD</span>
+              <span style={btnStyle(vis.rsi, RSI_COLORS[0])} onClick={() => toggle("rsi")}>RSI</span>
+            </>
+          )}
         </div>
       </div>
 
-      <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #f0f0f0", position: "relative" }}>
-        <div ref={mainRef} />
-        {vis.macd && <div ref={macdRef} />}
-        {vis.rsi && <div ref={rsiRef} />}
-      </div>
+      {showIntraday ? (
+        <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #f0f0f0" }}>
+          {todayIntraday?.loading ? (
+            <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb" }}>加载中...</div>
+          ) : todayIntraday?.error ? (
+            <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb" }}>{todayIntraday.error}</div>
+          ) : todayIntraday?.bars && todayIntraday.bars.length > 0 ? (
+            <>
+              {todayIntraday.fallback_date && (
+                <div style={{ padding: "4px 12px", background: "#fff7e6", borderBottom: "1px solid #ffd591", fontSize: 12, color: "#ad6800", textAlign: "center" }}>
+                  今日休市，显示最近交易日 <b>{todayIntraday.fallback_date}</b> 分时图
+                </div>
+              )}
+              <IntradayLineChart bars={todayIntraday.bars} prevClose={prevCloseProp ?? 0} isDark={isDark} />
+            </>
+          ) : (
+            <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb" }}>暂无数据</div>
+          )}
+        </div>
+      ) : (
+        <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #f0f0f0", position: "relative" }}>
+          <div ref={mainRef} style={{ minHeight: mainH }} />
+          <div ref={macdRef} style={{ height: vis.macd ? subH : 0, overflow: "hidden" }} />
+          <div ref={rsiRef} style={{ height: vis.rsi ? subH : 0, overflow: "hidden" }} />
+        </div>
+      )}
 
       {tooltip && item && (
         <div style={{
           position: "absolute", left: tooltip.x, top: Math.max(tooltip.y - 90, 10),
-          background: "#fff", border: "1px solid #e0e0e0", borderRadius: 8,
+          background: bgColor, border: `1px solid ${isDark ? "#444" : "#e0e0e0"}`, borderRadius: 8,
           padding: "10px 14px", boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
           fontSize: 12, lineHeight: "20px", zIndex: 100, minWidth: 160,
         }}>
@@ -298,7 +401,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       {intraday && (
         <div style={{
           marginTop: 12, padding: "12px 16px",
-          background: "#fff", borderRadius: 8,
+          background: bgColor, borderRadius: 8,
           border: "1px solid #e8e8e8", boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -315,7 +418,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
               {intraday.error}
             </div>
           ) : intraday.bars.length > 0 ? (
-            <IntradayLineChart bars={intraday.bars} prevClose={prevClose} />
+            <IntradayLineChart bars={intraday.bars} prevClose={prevClose} isDark={isDark} />
           ) : (
             <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb" }}>暂无数据</div>
           )}
@@ -325,14 +428,17 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
   );
 }
 
-function IntradayLineChart({ bars, prevClose }: { bars: IntradayBar[]; prevClose: number }) {
+function IntradayLineChart({ bars, prevClose, isDark }: { bars: IntradayBar[]; prevClose: number; isDark?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+
+  const bgColor = isDark ? "#1a1a1a" : "#ffffff";
+  const textColor = isDark ? "#d9d9d9" : "#333333";
 
   useEffect(() => {
     if (!ref.current || bars.length === 0) return;
     try {
     const chart = createChart(ref.current, {
-      layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#333" },
+      layout: { background: { type: ColorType.Solid, color: bgColor }, textColor },
       width: ref.current.clientWidth, height: 260,
       grid: { vertLines: { visible: false }, horzLines: { color: "#f0f0f0" } },
       crosshair: { mode: CrosshairMode.Normal },
@@ -375,9 +481,11 @@ function IntradayLineChart({ bars, prevClose }: { bars: IntradayBar[]; prevClose
     })));
 
     chart.timeScale().fitContent();
-    const handleResize = () => { if (ref.current) chart.applyOptions({ width: ref.current.clientWidth }); };
-    window.addEventListener("resize", handleResize);
-    return () => { window.removeEventListener("resize", handleResize); chart.remove(); };
+    const ro = new ResizeObserver(() => {
+      const el = ref.current; if (el) requestAnimationFrame(() => chart.applyOptions({ width: el.clientWidth }));
+    });
+    if (ref.current) ro.observe(ref.current);
+    return () => { ro.disconnect(); chart.remove(); };
     } catch (err) { console.error("IntradayLineChart error:", err); }
   }, [bars, prevClose]);
 

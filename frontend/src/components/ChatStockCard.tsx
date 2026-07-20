@@ -2,6 +2,7 @@
 import { Card, Tag, Typography, Row, Col, Statistic } from "antd";
 import { ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 import KlineChart from "./KlineChart";
+import { useTheme } from "../api/ThemeContext";
 import { getKlineData, getIndicators } from "../api/client";
 import type { StockQuote, KlineItem, IndicatorsData } from "../types";
 
@@ -26,6 +27,7 @@ export default function ChatStockCard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { isDark } = useTheme();
   const isUp = quote.change_pct >= 0;
 
   const handlePeriodChange = async (newKlt: string) => {
@@ -34,7 +36,7 @@ export default function ChatStockCard({
     setError(null);
     try {
       const [klineRes, indRes] = await Promise.all([
-        getKlineData(stockCode, market, 10000, newKlt),
+        getKlineData(stockCode, market, 500, newKlt),
         getIndicators(stockCode, market, 10000, newKlt),
       ]);
       setKline(klineRes.kline || []);
@@ -47,9 +49,9 @@ export default function ChatStockCard({
   };
 
   return (
-    <div style={{ marginTop: 8 }}>
+    <div className="stock-card-enter card-hover" style={{ animationDelay: "0.2s", marginTop: 8 }}>
       {/* Quote card */}
-      <Card size="small" style={{ marginBottom: 8, background: "#fafcff", border: "1px solid #e8f4ff" }}>
+      <Card size="small" style={{ marginBottom: 8, background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
           <Tag color="blue">{quote.code}</Tag>
           <Text strong>{quote.name}</Text>
@@ -94,6 +96,7 @@ export default function ChatStockCard({
         <div style={{ padding: 8, color: "#cf1322", fontSize: 12, marginBottom: 8 }}>{error}</div>
       )}
       <KlineChart
+        isDark={isDark}
         data={kline}
         stockName={stockName}
         stockCode={stockCode}

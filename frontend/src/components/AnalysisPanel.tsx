@@ -1,4 +1,4 @@
-import { Card, Tag, Spin, Statistic, Row, Col } from "antd";
+﻿import { Card, Tag, Spin, Statistic, Row, Col } from "antd";
 import {
   RiseOutlined,
   FallOutlined,
@@ -53,7 +53,7 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
   const isUp = quote.change_pct >= 0;
 
   return (
-    <Card
+    <Card className="card-hover stock-card-enter"
       title={
         <span>
           <Tag color="blue">{quote.code}</Tag>
@@ -108,7 +108,7 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
           <Statistic title="换手率" value={quote.turnover} precision={2} suffix="%" />
         </Col>
       </Row>
-      <Card
+      <Card className="card-hover stock-card-enter"
         title="AI 投研分析"
         style={{ background: "#fafcff", border: "1px solid #e8f4ff" }}
       >
@@ -124,7 +124,7 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
         )}
       </Card>
       {memoryContext && (
-        <Card
+        <Card className="card-hover stock-card-enter"
           size="small"
           title={<span><HistoryOutlined /> 记忆上下文</span>}
           style={{ marginTop: 12, background: "#fafafa", border: "1px solid #e8e8e8" }}
@@ -135,7 +135,7 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
         </Card>
       )}
       {summary && (
-        <Card
+        <Card className="card-hover stock-card-enter"
           size="small"
           title={<span><FileTextOutlined /> 投资日志摘要</span>}
           style={{ marginTop: 12, background: "#fffbe6", border: "1px solid #ffe58f" }}
@@ -148,3 +148,4 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
     </Card>
   );
 }
+

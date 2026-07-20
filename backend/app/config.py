@@ -9,7 +9,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 APP_TITLE = "知股 - AI投研助手"
 APP_VERSION = "0.1.0"
-CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ORIGINS = ["http://localhost:5174", "http://127.0.0.1:5174", "http://zhigu.local:5174", "https://zhigu.local:5174", "https://localhost:5174"]
 
 # Phase 5: WeChat integration
 WECHAT_WEBHOOK_API_KEY = os.getenv("WECHAT_WEBHOOK_API_KEY", "")
@@ -34,3 +34,4 @@ def setup_wechat_logging() -> logging.Logger:
         fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
         logger.addHandler(fh)
     return logger
+

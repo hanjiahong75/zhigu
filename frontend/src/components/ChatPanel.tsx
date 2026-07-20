@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { Input, Button, Spin, Typography, Modal, App, message } from "antd";
 import {
   SendOutlined, RobotOutlined, UserOutlined, PlusOutlined,
@@ -6,6 +6,7 @@ import {
   StockOutlined, WalletOutlined,
 } from "@ant-design/icons";
 import ChatStockCard from "./ChatStockCard";
+import StockSearch from "./StockSearch";
 import PortfolioPanel from "./PortfolioPanel";
 import {
   sendChatMessage, getChatThreads, getChatThreadMessages,
@@ -88,6 +89,7 @@ export default function ChatPanel() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, threadId: "" });
   const [renameModal, setRenameModal] = useState<{ visible: boolean; threadId: string; title: string }>({ visible: false, threadId: "", title: "" });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("threads");
+  const [searchRefresh, setSearchRefresh] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
@@ -215,7 +217,7 @@ export default function ChatPanel() {
       {contextMenu.visible && (
         <div ref={contextMenuRef} style={{
           position: "fixed", left: contextMenu.x, top: contextMenu.y,
-          background: "#fff", border: "1px solid #e8e8e8", borderRadius: 8,
+          background: "var(--bg-secondary)", border: "1px solid #e8e8e8", borderRadius: 8,
           boxShadow: "0 4px 12px rgba(0,0,0,0.12)", zIndex: 1000,
           minWidth: 140, padding: "4px 0",
         }}>
@@ -225,7 +227,7 @@ export default function ChatPanel() {
               <div
                 onClick={handlePin}
                 style={menuItemStyle}>
-                {t?.pinned ? <PushpinFilled style={{ color: "#1677ff" }} /> : <PushpinOutlined />}
+                {t?.pinned ? <PushpinFilled style={{ color: "var(--bubble-user-text)" }} /> : <PushpinOutlined />}
                 <span style={{ marginLeft: 8 }}>{t?.pinned ? "取消置顶" : "置顶"}</span>
               </div>
             );
@@ -261,14 +263,28 @@ export default function ChatPanel() {
 
       {/* Thread sidebar */}
       <div style={{
-        width: 200, borderRight: "1px solid #f0f0f0", background: "#fafafa",
+        width: 240, borderRight: "1px solid var(--border-color)", background: "var(--bg-sidebar)",
         display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
       }}>
-        <div style={{ display: "flex", borderBottom: "1px solid #f0f0f0" }}>
+        {/* Search bar */}
+        <div style={{ padding: "8px" }}>
+          <StockSearch
+            onSelect={(code, name, market) => {
+              /* Auto-create new thread and chat about this stock */
+              setThreadId("");
+              setMessages([]);
+              setInput(name + "(" + code + ") 怎么样？");
+              setSidebarTab("threads");
+            }}
+            onWatchlistChange={() => setSearchRefresh((n) => n + 1)}
+            compact
+          />
+        </div>
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border-color)" }}>
           <button
-            onClick={() => setSidebarTab("threads")}
+            className="btn-pulse" onClick={() => setSidebarTab("threads")}
             style={{
-              flex: 1, padding: "8px 0", border: "none", background: sidebarTab === "threads" ? "#e6f4ff" : "transparent",
+              flex: 1, padding: "8px 0", border: "none", background: sidebarTab === "threads" ? "var(--thread-active-bg)" : "transparent",
               cursor: "pointer", fontSize: 12, fontWeight: sidebarTab === "threads" ? 600 : 400,
               color: sidebarTab === "threads" ? "#1677ff" : "#666",
               borderBottom: sidebarTab === "threads" ? "2px solid #1677ff" : "2px solid transparent",
@@ -278,9 +294,9 @@ export default function ChatPanel() {
             <StockOutlined /> 对话
           </button>
           <button
-            onClick={() => setSidebarTab("portfolio")}
+            className="btn-pulse" onClick={() => setSidebarTab("portfolio")}
             style={{
-              flex: 1, padding: "8px 0", border: "none", background: sidebarTab === "portfolio" ? "#e6f4ff" : "transparent",
+              flex: 1, padding: "8px 0", border: "none", background: sidebarTab === "portfolio" ? "var(--thread-active-bg)" : "transparent",
               cursor: "pointer", fontSize: 12, fontWeight: sidebarTab === "portfolio" ? 600 : 400,
               color: sidebarTab === "portfolio" ? "#1677ff" : "#666",
               borderBottom: sidebarTab === "portfolio" ? "2px solid #1677ff" : "2px solid transparent",
@@ -293,7 +309,7 @@ export default function ChatPanel() {
 
         {sidebarTab === "threads" && (
           <>
-            <div style={{ padding: "8px", borderBottom: "1px solid #f0f0f0" }}>
+            <div style={{ padding: "8px", borderBottom: "1px solid var(--border-color)" }}>
               <Button type="primary" size="small" block icon={<PlusOutlined />} onClick={newThread}>
                 新建对话
               </Button>
@@ -309,18 +325,18 @@ export default function ChatPanel() {
                      onContextMenu={(e) => handleContextMenu(e, t.id)}
                      style={{
                        padding: "8px", cursor: "pointer", borderRadius: 6, marginBottom: 2,
-                       background: t.id === threadId ? "#e6f4ff" : "transparent",
-                       border: t.id === threadId ? "1px solid #91caff" : "1px solid transparent",
+                       background: t.id === threadId ? "var(--thread-active-bg)" : "transparent",
+                       borderLeft: t.id === threadId ? "3px solid #1677ff" : "3px solid transparent", border: "1px solid transparent",
                        display: "flex", alignItems: "center", gap: 4,
                      }}
                    >
-                     {t.pinned && <PushpinFilled style={{ color: "#1677ff", fontSize: 10, flexShrink: 0 }} />}
+                     {t.pinned && <PushpinFilled style={{ color: "var(--bubble-user-text)", fontSize: 10, flexShrink: 0 }} />}
                      <div style={{ flex: 1, minWidth: 0 }}>
-                       <div style={{ fontSize: 12, fontWeight: t.id === threadId ? 600 : 400, color: "#333",
+                       <div style={{ fontSize: 12, fontWeight: t.id === threadId ? 600 : 400, color: "var(--text-primary)",
                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                          {t.title || "新对话"}
                        </div>
-                       <div style={{ fontSize: 10, color: "#bbb", marginTop: 2,
+                       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2,
                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                          {t.last_message?.slice(0, 30)}
                        </div>
@@ -332,8 +348,8 @@ export default function ChatPanel() {
                      {pinnedThreads.map(renderThread)}
                      {pinnedThreads.length > 0 && unpinnedThreads.length > 0 && (
                        <div style={{
-                         borderTop: "1px solid #e8e8e8", margin: "4px 0",
-                         fontSize: 10, color: "#bbb", padding: "2px 8px",
+                         borderTop: "1px solid var(--border-color)", margin: "4px 0",
+                         fontSize: 10, color: "var(--text-muted)", padding: "2px 8px",
                        }}>常规对话</div>
                      )}
                      {unpinnedThreads.map(renderThread)}
@@ -355,22 +371,22 @@ export default function ChatPanel() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div style={{ flex: 1, overflow: "auto", padding: "16px 24px", display: "flex", flexDirection: "column", gap: 12 }}>
           {messages.length === 0 && !loading && (
-            <div style={{ textAlign: "center", color: "#bbb", fontSize: 13, marginTop: 60, padding: "0 24px", lineHeight: "22px" }}>
+            <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 13, marginTop: 60, padding: "0 24px", lineHeight: "22px" }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>🤖</div>
               <div>我是知股，你的AI投研助手</div>
-              <div style={{ marginTop: 8, fontSize: 11, color: "#ccc" }}>
+              <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-muted)" }}>
                 试着问我："茅台现在怎么样？" "新能源板块怎么看？" "今天大盘如何？"
               </div>
             </div>
           )}
           {messages.map((msg) => (
-            <div key={msg.id} style={{ display: "flex", gap: 10, flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
+            <div key={msg.id} className={msg.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"} style={{ display: "flex", gap: 10, flexDirection: msg.role === "user" ? "row-reverse" : "row" }}>
               <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: msg.role === "user" ? "#1677ff" : "#52c41a", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {msg.role === "user" ? <UserOutlined style={{ color: "#fff", fontSize: 14 }} /> : <RobotOutlined style={{ color: "#fff", fontSize: 14 }} />}
               </div>
               <div style={{ maxWidth: "95%", minWidth: 0 }}>
-                <div style={{ padding: "10px 16px", borderRadius: 12, background: msg.role === "user" ? "#e6f4ff" : "#f6ffed", border: msg.role === "user" ? "1px solid #91caff" : "1px solid #b7eb8f", fontSize: 13, lineHeight: "20px", color: "#333", display: "inline-block", maxWidth: "100%" }}>
-                  {msg.role === "assistant" ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} /> : <Text style={{ color: "#1677ff" }}>{msg.content}</Text>}
+                <div style={{ padding: "10px 16px", borderRadius: 12, background: msg.role === "user" ? "var(--bubble-user-bg)" : "var(--bubble-ai-bg)", border: msg.role === "user" ? "1px solid var(--bubble-user-border)" : "1px solid var(--bubble-ai-border)", fontSize: 13, lineHeight: "20px", color: "var(--bubble-ai-text)", display: "inline-block", maxWidth: "100%" }}>
+                  {msg.role === "assistant" ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} /> : <Text style={{ color: "var(--bubble-user-text)" }}>{msg.content}</Text>}
                 </div>
                 {msg.role === "assistant" && msg.stock_data?.kline && msg.stock_data?.quote && (
                   <ChatStockCard stockCode={msg.stock_data.stock_code || msg.stock_code} stockName={msg.stock_data.stock_name || msg.stock_name} market={msg.stock_data.market || "sz"} quote={msg.stock_data.quote} initialKline={msg.stock_data.kline} initialIndicators={msg.stock_data.indicators || null} />
@@ -383,14 +399,14 @@ export default function ChatPanel() {
               <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#52c41a", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <RobotOutlined style={{ color: "#fff", fontSize: 14 }} />
               </div>
-              <div style={{ padding: "10px 20px", borderRadius: 12, background: "#f6ffed", border: "1px solid #b7eb8f", fontSize: 13 }}>
+              <div style={{ padding: "10px 20px", borderRadius: 12, background: "var(--bubble-ai-bg)", border: "1px solid var(--bubble-ai-border)", fontSize: 13 }}>
                 <Spin size="small" /> 思考中...
               </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
-        <div style={{ padding: "12px 24px", borderTop: "1px solid #f0f0f0", background: "#fff" }}>
+        <div style={{ padding: "12px 24px", borderTop: "1px solid var(--border-color)", background: "var(--bg-secondary)" }}>
           <Input.Search value={input} onChange={(e) => setInput(e.target.value)} onSearch={handleSend} placeholder="输入你的问题，如：茅台现在怎么样？" enterButton={<SendOutlined />} loading={loading} size="large" />
         </div>
       </div>
@@ -400,5 +416,8 @@ export default function ChatPanel() {
 
 const menuItemStyle: React.CSSProperties = {
   padding: "6px 12px", cursor: "pointer", fontSize: 12, display: "flex",
-  alignItems: "center", color: "#333",
+  alignItems: "center", color: "var(--text-primary)",
 };
+
+
+

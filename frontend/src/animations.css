@@ -1,0 +1,276 @@
+﻿/* ── Theme CSS variables ── */
+:root, [data-theme="light"] {
+  --bg-primary: #f5f5f5;
+  --bg-secondary: #ffffff;
+  --bg-header: #ffffff;
+  --bg-sidebar: #fafafa;
+  --bg-input: #ffffff;
+  --border-color: #f0f0f0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+  --bubble-user-bg: #e6f4ff;
+  --bubble-user-border: #91caff;
+  --bubble-user-text: #1677ff;
+  --bubble-ai-bg: #f6ffed;
+  --bubble-ai-border: #b7eb8f;
+  --bubble-ai-text: #333333;
+  --thread-hover-bg: #f0f5ff;
+  --thread-active-bg: #e6f4ff;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --card-hover-shadow: 0 12px 40px rgba(0,0,0,0.12);
+  --input-border: #d9d9d9;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #141414;
+  --bg-secondary: #1f1f1f;
+  --bg-header: #1f1f1f;
+  --bg-sidebar: #1a1a1a;
+  --bg-input: #2d2d2d;
+  --border-color: #333333;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --bubble-user-bg: #111d2c;
+  --bubble-user-border: #15395b;
+  --bubble-user-text: #8dc7ff;
+  --bubble-ai-bg: #262626;
+  --bubble-ai-border: #434343;
+  --bubble-ai-text: #d9d9d9;
+  --thread-hover-bg: #333333;
+  --thread-active-bg: #2a2a2a;
+  --card-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --card-hover-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  --input-border: #434343;
+}
+
+/* ── Page transition animations ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Message bubble animations ── */
+.chat-bubble-user {
+  animation: fadeInUp 0.3s ease;
+}
+.chat-bubble-assistant {
+  animation: fadeInUp 0.4s ease;
+}
+
+/* ── Sidebar thread item hover ── */
+.thread-item {
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+}
+.thread-item:hover {
+  background: var(--thread-hover-bg);
+  transform: translateX(4px);
+}
+.thread-item.active {
+  background: var(--thread-active-bg);
+  border-left: 3px solid #1677ff;
+  color: var(--text-primary);
+}
+
+/* ── Button scale feedback ── */
+.btn-pulse:active {
+  transform: scale(0.96);
+}
+
+/* ── Card hover lift ── */
+.card-hover {
+  transition: all 0.3s ease;
+  box-shadow: var(--card-shadow);
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--card-hover-shadow);
+}
+
+/* ── Stock card slide in ── */
+.stock-card-enter {
+  animation: slideInRight 0.4s ease;
+  background: var(--bg-secondary) !important;
+}
+
+/* ── Watchlist item ── */
+.watchlist-item {
+  transition: all 0.2s ease;
+}
+.watchlist-item:hover {
+  background: var(--thread-hover-bg) !important;
+}
+
+/* ── Loading skeleton pulse ── */
+@keyframes shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+.skeleton-pulse {
+  background: linear-gradient(90deg, #333 25%, #444 50%, #333 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ── Page enter ── */
+.page-enter {
+  animation: fadeIn 0.4s ease;
+}
+
+/* ── Dark mode overrides for Ant Design card headers ── */
+[data-theme="dark"] .ant-card {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+[data-theme="dark"] .ant-card-head {
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-color);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .ant-card-head-title {
+  color: var(--text-primary);
+}
+[data-theme="dark"] .ant-typography {
+  color: var(--text-primary);
+}
+[data-theme="dark"] .ant-typography.ant-typography-secondary {
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .ant-input,
+[data-theme="dark"] .ant-input-affix-wrapper {
+  background: var(--bg-input);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+/* ── Fix K-line chart: keep red-up / green-down always ── */
+/* (handled in KlineChart.tsx via lightweight-charts config) */
+
+/* ── Full dark mode overrides for Ant Design ── */
+[data-theme="dark"] .ant-layout,
+[data-theme="dark"] .ant-layout-content,
+[data-theme="dark"] .ant-layout-header {
+  background: var(--bg-primary) !important;
+}
+[data-theme="dark"] .ant-layout-header {
+  background: var(--bg-header) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+[data-theme="dark"] .ant-table {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .ant-table-thead > tr > th {
+  background: var(--bg-sidebar) !important;
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--border-color) !important;
+}
+[data-theme="dark"] .ant-table-tbody > tr > td {
+  border-bottom-color: var(--border-color) !important;
+}
+[data-theme="dark"] .ant-table-tbody > tr:hover > td {
+  background: var(--thread-hover-bg) !important;
+}
+[data-theme="dark"] .ant-select-selector,
+[data-theme="dark"] .ant-select-dropdown {
+  background: var(--bg-input) !important;
+  border-color: var(--input-border) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .ant-modal-content,
+[data-theme="dark"] .ant-modal-header {
+  background: var(--bg-secondary) !important;
+}
+[data-theme="dark"] .ant-modal-title {
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .ant-divider {
+  border-color: var(--border-color) !important;
+}
+[data-theme="dark"] .ant-btn-text {
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .ant-btn-text:hover {
+  color: var(--text-primary);
+  background: var(--thread-hover-bg);
+}
+[data-theme="dark"] .ant-input-search .ant-input {
+  background: var(--bg-input);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .ant-tag {
+  border-color: transparent;
+}
+[data-theme="dark"] .ant-statistic-title {
+  color: var(--text-secondary) !important;
+}
+[data-theme="dark"] .ant-statistic-content {
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .ant-descriptions-item-label {
+  background: var(--bg-sidebar) !important;
+  color: var(--text-secondary) !important;
+}
+[data-theme="dark"] .ant-descriptions-item-content {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme="dark"] .ant-empty-description {
+  color: var(--text-muted) !important;
+}
+
+/* ── Apple-style fade-in animation ── */
+@keyframes appleFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.apple-fade-in {
+  animation: appleFadeIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Staggered children — each child gets a progressive delay */
+.apple-stagger > * {
+  opacity: 0;
+  animation: appleFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.apple-stagger > *:nth-child(1) { animation-delay: 0s; }
+.apple-stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.apple-stagger > *:nth-child(3) { animation-delay: 0.16s; }
+.apple-stagger > *:nth-child(4) { animation-delay: 0.24s; }
+.apple-stagger > *:nth-child(5) { animation-delay: 0.32s; }
+.apple-stagger > *:nth-child(6) { animation-delay: 0.4s; }
+.apple-stagger > *:nth-child(7) { animation-delay: 0.48s; }
+.apple-stagger > *:nth-child(8) { animation-delay: 0.56s; }
+.apple-stagger > *:nth-child(9) { animation-delay: 0.64s; }
+.apple-stagger > *:nth-child(10) { animation-delay: 0.72s; }

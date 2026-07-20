@@ -1,4 +1,4 @@
-﻿export interface StockQuote {
+export interface StockQuote {
   code: string;
   name: string;
   price: number;
@@ -86,6 +86,12 @@ export interface PortfolioItem {
   value?: number;
   profit_loss?: number;
   profit_pct?: number;
+  holding_amount?: number;
+  cost_amount?: number;
+  holding_return?: number;
+  daily_return?: number;
+  daily_return_pct?: number;
+  sector?: string;
 }
 
 export interface Portfolio {
@@ -104,4 +110,64 @@ export interface RecognizedItem {
   quantity: number;
   cost_price: number;
   current_price?: number;
+}
+
+export interface DiagnosisItem {
+  stock_code: string;
+  stock_name: string;
+  asset_type: string;
+  weight_pct: number;
+  profit_pct: number;
+  change_today: number | null;
+  signal: "green" | "yellow" | "red" | "grey";
+  reason: string;
+}
+
+export interface DiagnosisData {
+  concentration: {
+    top3_pct: number;
+    top1_pct: number;
+    top1_name: string;
+    warning: string | null;
+  } | null;
+  items: DiagnosisItem[];
+  summary: string;
+}
+
+export interface UserProfile {
+  investment_style: 'short_term' | 'medium_term' | 'long_term';
+  risk_preference: 'conservative' | 'moderate' | 'aggressive';
+  focus_industries: string;
+  focus_stocks: string;
+}
+
+export interface GlobalQuote {
+  code: string;
+  market: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount?: number;
+  pe?: number;
+  source: string;
+}
+
+export interface GlobalIndicators {
+  code: string;
+  market: string;
+  price: number;
+  rsi: number;
+  rsi_signal: string;
+  macd: { macd: number; signal: number; histogram: number };
+  ma: { ma5: number; ma10: number; ma20: number; ma50: number };
+  boll: { upper: number; mid: number; lower: number };
+  recommendation: string;
+  buy_count: number;
+  sell_count: number;
+  neutral_count: number;
+  source: string;
 }

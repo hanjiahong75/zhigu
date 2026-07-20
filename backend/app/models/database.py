@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, inspect
+﻿from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import sqlalchemy, os
 
@@ -28,3 +28,20 @@ def init_db():
                 sql = "ALTER TABLE analysis_cache ADD COLUMN user_message TEXT DEFAULT ''"
                 conn.execute(sqlalchemy.text(sql))
                 conn.commit()
+    # Migrate portfolio_items: add fund-specific columns
+    if "portfolio_items" in insp.get_table_names():
+        pi_cols = [c["name"] for c in insp.get_columns("portfolio_items")]
+        fund_fields = {
+            "holding_amount": "FLOAT DEFAULT 0",
+            "cost_amount": "FLOAT DEFAULT 0",
+            "holding_return": "FLOAT DEFAULT 0",
+            "daily_return": "FLOAT DEFAULT 0",
+            "daily_return_pct": "FLOAT DEFAULT 0",
+            "sector": "VARCHAR(50) DEFAULT ''",
+        }
+        with engine.connect() as conn:
+            for field, typedef in fund_fields.items():
+                if field not in pi_cols:
+                    sql = f"ALTER TABLE portfolio_items ADD COLUMN {field} {typedef}"
+                    conn.execute(sqlalchemy.text(sql))
+            conn.commit()

@@ -1,0 +1,171 @@
+"""Popular stock symbol mappings for markets without native search APIs."""
+
+POPULAR_STOCKS: dict[str, list[dict]] = {
+    "jp": [
+        {"code": "7203", "name": "丰田汽车", "name_en": "Toyota Motor"},
+        {"code": "6758", "name": "索尼集团", "name_en": "Sony Group"},
+        {"code": "9984", "name": "软银集团", "name_en": "SoftBank Group"},
+        {"code": "6861", "name": "基恩士", "name_en": "Keyence"},
+        {"code": "6501", "name": "日立", "name_en": "Hitachi"},
+        {"code": "8306", "name": "三菱UFJ金融", "name_en": "Mitsubishi UFJ Financial"},
+        {"code": "9432", "name": "日本电报电话", "name_en": "NTT"},
+        {"code": "6098", "name": "瑞可利控股", "name_en": "Recruit Holdings"},
+        {"code": "8035", "name": "东京电子", "name_en": "Tokyo Electron"},
+        {"code": "4568", "name": "第一三共", "name_en": "Daiichi Sankyo"},
+        {"code": "7974", "name": "任天堂", "name_en": "Nintendo"},
+        {"code": "9983", "name": "迅销", "name_en": "Fast Retailing (UNIQLO)"},
+        {"code": "9433", "name": "KDDI", "name_en": "KDDI"},
+        {"code": "7267", "name": "本田技研工业", "name_en": "Honda Motor"},
+        {"code": "8316", "name": "三井住友金融", "name_en": "Sumitomo Mitsui Financial"},
+        {"code": "4063", "name": "信越化学", "name_en": "Shin-Etsu Chemical"},
+        {"code": "8058", "name": "三菱商事", "name_en": "Mitsubishi Corporation"},
+        {"code": "6902", "name": "电装", "name_en": "Denso"},
+        {"code": "7751", "name": "佳能", "name_en": "Canon"},
+        {"code": "4661", "name": "东方乐园", "name_en": "Oriental Land (Disney)"},
+        {"code": "8001", "name": "伊藤忠商事", "name_en": "Itochu"},
+        {"code": "8766", "name": "东京海上控股", "name_en": "Tokio Marine Holdings"},
+        {"code": "7741", "name": "HOYA", "name_en": "HOYA"},
+        {"code": "4503", "name": "安斯泰来制药", "name_en": "Astellas Pharma"},
+        {"code": "3382", "name": "7&I控股", "name_en": "Seven & I Holdings"},
+        {"code": "6273", "name": "SMC", "name_en": "SMC Corporation"},
+        {"code": "8411", "name": "瑞穗金融集团", "name_en": "Mizuho Financial"},
+        {"code": "4519", "name": "中外制药", "name_en": "Chugai Pharmaceutical"},
+    ],
+    
+    "us": [
+        {"code": "AAPL", "name": "苹果", "name_en": "Apple"},
+        {"code": "MSFT", "name": "微软", "name_en": "Microsoft"},
+        {"code": "GOOGL", "name": "谷歌", "name_en": "Alphabet (Google)"},
+        {"code": "AMZN", "name": "亚马逊", "name_en": "Amazon"},
+        {"code": "NVDA", "name": "英伟达", "name_en": "NVIDIA"},
+        {"code": "META", "name": "Meta", "name_en": "Meta Platforms"},
+        {"code": "TSLA", "name": "特斯拉", "name_en": "Tesla"},
+        {"code": "AVGO", "name": "博通", "name_en": "Broadcom"},
+        {"code": "TSM", "name": "台积电", "name_en": "TSMC"},
+        {"code": "AMD", "name": "AMD", "name_en": "Advanced Micro Devices"},
+        {"code": "INTC", "name": "英特尔", "name_en": "Intel"},
+        {"code": "ASML", "name": "阿斯麦", "name_en": "ASML"},
+        {"code": "ARM", "name": "ARM", "name_en": "ARM Holdings"},
+        {"code": "JPM", "name": "摩根大通", "name_en": "JPMorgan Chase"},
+        {"code": "BAC", "name": "美国银行", "name_en": "Bank of America"},
+        {"code": "WMT", "name": "沃尔玛", "name_en": "Walmart"},
+        {"code": "XOM", "name": "埃克森美孚", "name_en": "Exxon Mobil"},
+        {"code": "PFE", "name": "辉瑞", "name_en": "Pfizer"},
+        {"code": "DIS", "name": "迪士尼", "name_en": "Walt Disney"},
+        {"code": "NFLX", "name": "奈飞", "name_en": "Netflix"},
+        {"code": "COIN", "name": "Coinbase", "name_en": "Coinbase"},
+        {"code": "PLTR", "name": "Palantir", "name_en": "Palantir Technologies"},
+        {"code": "SNOW", "name": "Snowflake", "name_en": "Snowflake"},
+        {"code": "UBER", "name": "优步", "name_en": "Uber"},
+        {"code": "PYPL", "name": "PayPal", "name_en": "PayPal"},
+        {"code": "BABA", "name": "阿里巴巴", "name_en": "Alibaba Group"},
+        {"code": "JD", "name": "京东", "name_en": "JD.com"},
+        {"code": "PDD", "name": "拼多多", "name_en": "PDD Holdings"},
+        {"code": "NIO", "name": "蔚来", "name_en": "NIO"},
+        {"code": "LI", "name": "理想汽车", "name_en": "Li Auto"},
+        {"code": "XPEV", "name": "小鹏汽车", "name_en": "XPeng"},
+        {"code": "BIDU", "name": "百度", "name_en": "Baidu"},
+        {"code": "NTES", "name": "网易", "name_en": "NetEase"},
+        {"code": "V", "name": "Visa", "name_en": "Visa"},
+        {"code": "MA", "name": "万事达", "name_en": "Mastercard"},
+        {"code": "CRM", "name": "Salesforce", "name_en": "Salesforce"},
+        {"code": "ADBE", "name": "Adobe", "name_en": "Adobe"},
+        {"code": "ORCL", "name": "甲骨文", "name_en": "Oracle"},
+        {"code": "CSCO", "name": "思科", "name_en": "Cisco"},
+        {"code": "QCOM", "name": "高通", "name_en": "Qualcomm"},
+        {"code": "MRVL", "name": "Marvell", "name_en": "Marvell Technology"},
+        {"code": "MU", "name": "美光科技", "name_en": "Micron Technology"},
+        {"code": "SMCI", "name": "超微电脑", "name_en": "Super Micro Computer"},
+        {"code": "DELL", "name": "戴尔", "name_en": "Dell Technologies"},
+        {"code": "IBM", "name": "IBM", "name_en": "IBM"},
+        {"code": "GE", "name": "通用电气", "name_en": "General Electric"},
+        {"code": "CAT", "name": "卡特彼勒", "name_en": "Caterpillar"},
+        {"code": "BA", "name": "波音", "name_en": "Boeing"},
+    ],
+    "hk": [
+        {"code": "00700", "name": "腾讯控股", "name_en": "Tencent"},
+        {"code": "09988", "name": "阿里巴巴-SW", "name_en": "Alibaba Group"},
+        {"code": "09961", "name": "携程集团-S", "name_en": "Trip.com"},
+        {"code": "09618", "name": "京东集团-SW", "name_en": "JD.com"},
+        {"code": "09888", "name": "百度集团-SW", "name_en": "Baidu"},
+        {"code": "09999", "name": "网易-S", "name_en": "NetEase"},
+        {"code": "03690", "name": "美团-W", "name_en": "Meituan"},
+        {"code": "01810", "name": "小米集团-W", "name_en": "Xiaomi"},
+        {"code": "02318", "name": "中国平安", "name_en": "Ping An Insurance"},
+        {"code": "00388", "name": "香港交易所", "name_en": "HKEX"},
+        {"code": "09901", "name": "新东方-S", "name_en": "New Oriental"},
+        {"code": "02015", "name": "理想汽车-W", "name_en": "Li Auto"},
+        {"code": "09866", "name": "蔚来-SW", "name_en": "NIO"},
+        {"code": "09626", "name": "哔哩哔哩-W", "name_en": "Bilibili"},
+        {"code": "01024", "name": "快手-W", "name_en": "Kuaishou"},
+        {"code": "02013", "name": "微盟集团", "name_en": "Weimob"},
+        {"code": "01833", "name": "平安好医生", "name_en": "Ping An Healthcare"},
+        {"code": "01299", "name": "友邦保险", "name_en": "AIA Group"},
+        {"code": "00941", "name": "中国移动", "name_en": "China Mobile"},
+        {"code": "00883", "name": "中国海洋石油", "name_en": "CNOOC"},
+        {"code": "01398", "name": "工商银行", "name_en": "ICBC"},
+        {"code": "03988", "name": "中国银行", "name_en": "Bank of China"},
+        {"code": "01288", "name": "农业银行", "name_en": "Agricultural Bank of China"},
+        {"code": "03968", "name": "招商银行", "name_en": "China Merchants Bank"},
+        {"code": "02628", "name": "中国人寿", "name_en": "China Life Insurance"},
+        {"code": "00005", "name": "汇丰控股", "name_en": "HSBC Holdings"},
+        {"code": "00011", "name": "恒生银行", "name_en": "Hang Seng Bank"},
+        {"code": "00016", "name": "新鸿基地产", "name_en": "Sun Hung Kai Properties"},
+        {"code": "00001", "name": "长和", "name_en": "CK Hutchison"},
+        {"code": "00027", "name": "银河娱乐", "name_en": "Galaxy Entertainment"},
+        {"code": "00066", "name": "港铁公司", "name_en": "MTR Corporation"},
+        {"code": "00175", "name": "吉利汽车", "name_en": "Geely Auto"},
+        {"code": "00241", "name": "阿里健康", "name_en": "Alibaba Health"},
+        {"code": "00267", "name": "中信股份", "name_en": "CITIC"},
+        {"code": "00285", "name": "比亚迪电子", "name_en": "BYD Electronic"},
+        {"code": "01093", "name": "石药集团", "name_en": "CSPC Pharmaceutical"},
+        {"code": "01109", "name": "华润置地", "name_en": "China Resources Land"},
+        {"code": "01211", "name": "比亚迪股份", "name_en": "BYD Company"},
+        {"code": "01347", "name": "华虹半导体", "name_en": "Hua Hong Semiconductor"},
+        {"code": "02269", "name": "药明生物", "name_en": "WuXi Biologics"},
+        {"code": "02382", "name": "舜宇光学科技", "name_en": "Sunny Optical"},
+        {"code": "09633", "name": "农夫山泉", "name_en": "Nongfu Spring"},
+        {"code": "09698", "name": "万国数据-SW", "name_en": "GDS Holdings"},
+    ],
+
+    "kr": [
+        {"code": "005930", "name": "三星电子", "name_en": "Samsung Electronics"},
+        {"code": "000660", "name": "SK海力士", "name_en": "SK Hynix"},
+        {"code": "373220", "name": "LG新能源", "name_en": "LG Energy Solution"},
+        {"code": "207940", "name": "三星生物制药", "name_en": "Samsung Biologics"},
+        {"code": "005380", "name": "现代汽车", "name_en": "Hyundai Motor"},
+        {"code": "000270", "name": "起亚汽车", "name_en": "Kia"},
+        {"code": "068270", "name": "赛尔群", "name_en": "Celltrion"},
+        {"code": "105560", "name": "KB金融集团", "name_en": "KB Financial Group"},
+        {"code": "035420", "name": "NAVER", "name_en": "NAVER"},
+        {"code": "051910", "name": "LG化学", "name_en": "LG Chem"},
+        {"code": "055550", "name": "新韩金融集团", "name_en": "Shinhan Financial"},
+        {"code": "012330", "name": "现代摩比斯", "name_en": "Hyundai Mobis"},
+        {"code": "006400", "name": "三星SDI", "name_en": "Samsung SDI"},
+        {"code": "035720", "name": "Kakao", "name_en": "Kakao"},
+        {"code": "003550", "name": "LG集团", "name_en": "LG Corp"},
+    ],
+}
+
+def search_popular(keyword: str, market: str) -> list[dict]:
+    """Fuzzy search popular stocks by keyword (name, name_en, code)."""
+    stocks = POPULAR_STOCKS.get(market, [])
+    if not stocks:
+        return []
+    keyword_lower = keyword.lower()
+    results = []
+    for s in stocks:
+        if (keyword_lower in s["name"].lower() or
+            keyword_lower in s["name_en"].lower() or
+            keyword_lower in s["code"]):
+            results.append(s)
+    return results[:10]
+
+
+def get_stock_name(code: str, market: str) -> str:
+    """Look up stock name by code."""
+    stocks = POPULAR_STOCKS.get(market, [])
+    for s in stocks:
+        if s["code"] == code:
+            return s["name"]
+    return code

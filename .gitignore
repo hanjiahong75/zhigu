@@ -9,8 +9,14 @@ __pycache__/
 *.env
 
 # Database
+backend/data/zhigu.db
+backend/data/uploads/
 data/zhigu.db
 data/uploads/
+backend/chroma_db/*.sqlite3
+backend/chroma_db/*.sqlite
+backend/chroma_db/*.db
+concepts.db
 
 # IDE
 .idea/
@@ -24,6 +30,10 @@ frontend/dist/
 # Logs
 backend/logs/
 *.log
+be_err.txt
+be_out.txt
+fe_err.txt
+fe_out.txt
 
 # OS
 .DS_Store

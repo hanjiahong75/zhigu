@@ -31,3 +31,19 @@ Thumbs.db
 
 # OpenClaw
 .openclaw/
+
+# Miniprogram (Taro)
+miniprogram/node_modules/
+miniprogram/dist/
+miniprogram/.swc/
+miniprogram/.temp/
+
+# Video / cert / demo artifacts
+frontend/*.webm
+frontend/cert/
+frontend/demo-script.cjs
+project.private.config.json
+
+# Reports / notes
+*.md
+*.txt

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Typography } from "antd";
+import { Skeleton, Typography } from "antd";
 import { ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 import { getGlobalIndices } from "../api/client";
 
@@ -39,8 +39,8 @@ export default function MarketPage({ onSelectIndex }: Props) {
 
   if (loading) {
     return (
-      <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: "var(--text-muted)", fontSize: 13 }}>加载中...</Text>
+      <div style={{ flex: 1, padding: 24 }}>
+        <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
   }

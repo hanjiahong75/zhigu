@@ -3,6 +3,16 @@ import akshare as ak
 from curl_cffi import requests
 import pandas as pd
 from typing import Optional
+from ..config import QUOTE_POLL_CHUNK_SIZE
+from .cache_utils import memo_ttl
+
+
+def _safe_float(v, default: float = 0.0) -> float:
+    """Parse EastMoney numeric fields that may be '-' or empty."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 
 def search_stocks(keyword: str) -> list[dict]:
     """Search stocks by keyword (name or code)."""
@@ -14,6 +24,7 @@ def search_stocks(keyword: str) -> list[dict]:
     except Exception:
         return []
 
+@memo_ttl(5)
 def get_realtime_quote(code: str, market: str = "sz") -> Optional[dict]:
     # Known A-share index codes -> EastMoney secids
     index_secids = {
@@ -149,6 +160,75 @@ def get_realtime_quote(code: str, market: str = "sz") -> Optional[dict]:
     except Exception:
         return None
 
+
+def get_batch_quotes(codes: list[str]) -> dict[str, dict]:
+    """Batch-fetch realtime quotes via EastMoney ulist.np/get, chunked <=50.
+
+    Returns {code: quote_dict} with the same shape as get_realtime_quote.
+    Codes that fail (or global codes) fall back to per-code get_realtime_quote.
+    """
+    if not codes:
+        return {}
+
+    index_secids = {
+        "000001": "1.000001", "399001": "0.399001", "399006": "0.399006",
+        "000688": "1.000688", "000300": "1.000300",
+    }
+    results: dict[str, dict] = {}
+    seen: set[str] = set()
+    unique = [c for c in codes if not (c in seen or seen.add(c))]
+    chunks = [unique[i:i + QUOTE_POLL_CHUNK_SIZE] for i in range(0, len(unique), QUOTE_POLL_CHUNK_SIZE)]
+
+    for chunk in chunks:
+        secid_map: dict[str, str] = {}
+        for code in chunk:
+            if "." in code:
+                continue  # global codes (e.g. 100.HSI) -> per-code fallback
+            secid_map[code] = index_secids.get(code) or (
+                f"1.{code}" if code.startswith(("6", "9")) else f"0.{code}"
+            )
+        if secid_map:
+            try:
+                url = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+                params = {
+                    "fltt": 2,
+                    "fields": "f2,f3,f4,f5,f6,f8,f12,f14,f15,f16,f17,f18",
+                    "secids": ",".join(secid_map.values()),
+                }
+                r = requests.get(url, params=params, headers={"Referer": "https://quote.eastmoney.com"}, timeout=10)
+                data = r.json().get("data", {}) or {}
+                for item in data.get("diff", []) or []:
+                    code = item.get("f12")
+                    if not code:
+                        continue
+                    results[code] = {
+                        "code": code,
+                        "name": str(item.get("f14", "")),
+                        "price": round(_safe_float(item.get("f2")), 2),
+                        "change_pct": round(_safe_float(item.get("f3")), 2),
+                        "change_amount": round(_safe_float(item.get("f4")), 2),
+                        "volume": int(_safe_float(item.get("f5"))),
+                        "amount": round(_safe_float(item.get("f6")), 2),
+                        "turnover": round(_safe_float(item.get("f8")), 2),
+                        "high": round(_safe_float(item.get("f15")), 2),
+                        "low": round(_safe_float(item.get("f16")), 2),
+                        "open": round(_safe_float(item.get("f17")), 2),
+                        "pre_close": round(_safe_float(item.get("f18")), 2),
+                    }
+            except Exception:
+                pass
+        # Fallback for codes missing from the batch response
+        for code in chunk:
+            if code in results:
+                continue
+            market = "sh" if code.startswith(("6", "9")) else "sz"
+            q = get_realtime_quote(code, market)
+            if q:
+                results[code] = q
+    return results
+
+
+@memo_ttl(30)
 def get_kline_data(code: str, market: str = "sz", days: int = 10000, klt: str = "101") -> list[dict]:
     index_secids = {
         "000001": "1.000001", "399001": "0.399001", "399006": "0.399006",
@@ -405,6 +485,7 @@ def get_intraday(code: str, date: str = "", klt: str = "5") -> list[dict]:
     except Exception:
         return []
 
+@memo_ttl(10)
 def get_market_indices() -> list[dict]:
     """Get A-share indices. Tries EastMoney batch, then individual quotes."""
     results = []
@@ -429,6 +510,7 @@ def get_market_indices() -> list[dict]:
     return results
 
 # ── News ──────────────────────────────────────────────
+@memo_ttl(120)
 def get_news(page: int = 1, limit: int = 20) -> dict:
     import time as _t
     url = f"https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2509&k=&num={limit}&page={page}&_={int(_t.time())}"
@@ -448,6 +530,7 @@ def get_news(page: int = 1, limit: int = 20) -> dict:
 _fund_cache: dict = {}
 _fund_cache_ts: float = 0
 
+@memo_ttl(300)
 def search_funds(keyword: str) -> list[dict]:
     global _fund_cache, _fund_cache_ts
     import time as _t
@@ -470,6 +553,7 @@ def search_funds(keyword: str) -> list[dict]:
     return results[:30]
 
 # ── Fund NAV ───────────────────────────────────────────
+@memo_ttl(300)
 def get_fund_nav(code: str) -> dict:
     try:
         df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
@@ -505,54 +589,80 @@ def get_fund_nav(code: str) -> dict:
         return {"error":str(e)}
 
 # ── Fund Recommendations ───────────────────────────────
-_frec_cache: dict = {}
-_frec_cache_ts: float = 0
+import concurrent.futures as _cf
+import threading as _threading
 
+_fund_rank_cache: dict = {}
+_fund_rank_lock = _threading.Lock()
+
+
+def _fund_rank(sym: str):
+    """Fetch & memoize the akshare fund rank DataFrame for a symbol (2 min)."""
+    import time as _t
+    now = _t.time()
+    with _fund_rank_lock:
+        hit = _fund_rank_cache.get(sym)
+        if hit and (now - hit[0]) < 120:
+            return hit[1]
+    df = ak.fund_open_fund_rank_em(symbol=sym)
+    with _fund_rank_lock:
+        _fund_rank_cache[sym] = (now, df)
+    return df
+
+
+@memo_ttl(300)
 def get_fund_recommendations() -> dict:
-    global _frec_cache, _frec_cache_ts
     import time as _t, random as _rd
     now = _t.time()
-    if _frec_cache and (now - _frec_cache_ts) < 300:
-        return _frec_cache
+
     def pick(sym, cnt=8, sc="近1年"):
         try:
-            df = ak.fund_open_fund_rank_em(symbol=sym)
+            df = _fund_rank(sym)
             df = df.dropna(subset=[sc]).sort_values(sc, ascending=False)
             pool = df.head(30)
-            sel = pool.sample(n=min(cnt,len(pool)), random_state=int(now)%10000)
-            return [{"code":str(r["基金代码"]),"name":str(r["基金简称"]),
-                     "nav":float(r["单位净值"]) if pd.notna(r["单位净值"]) else None,
-                     "daily_return":float(r["日增长率"]) if pd.notna(r["日增长率"]) else None,
-                     "return_1m":float(r["近1月"]) if pd.notna(r["近1月"]) else None,
-                     "return_1y":float(r["近1年"]) if pd.notna(r["近1年"]) else None}
-                    for _,r in sel.iterrows()]
+            sel = pool.sample(n=min(cnt, len(pool)), random_state=int(now) % 10000)
+            return [{"code": str(r["基金代码"]), "name": str(r["基金简称"]),
+                     "nav": float(r["单位净值"]) if pd.notna(r["单位净值"]) else None,
+                     "daily_return": float(r["日增长率"]) if pd.notna(r["日增长率"]) else None,
+                     "return_1m": float(r["近1月"]) if pd.notna(r["近1月"]) else None,
+                     "return_1y": float(r["近1年"]) if pd.notna(r["近1年"]) else None}
+                    for _, r in sel.iterrows()]
         except Exception as e:
             print(f"pick({sym}) err: {e}"); return []
+
     def gold_oil(cnt=8):
         try:
-            df = ak.fund_open_fund_rank_em(symbol="全部")
+            df = _fund_rank("全部")  # reuse the cached "全部" table
             m = df["基金简称"].str.contains("黄金|石油", na=False, case=False)
             go = df[m].dropna(subset=["近1年"]).sort_values("近1年", ascending=False)
-            pool = go.head(min(30,len(go)))
-            sel = pool.sample(n=min(cnt,len(pool)), random_state=int(now)%10000+1)
-            return [{"code":str(r["基金代码"]),"name":str(r["基金简称"]),
-                     "nav":float(r["单位净值"]) if pd.notna(r["单位净值"]) else None,
-                     "daily_return":float(r["日增长率"]) if pd.notna(r["日增长率"]) else None,
-                     "return_1m":float(r["近1月"]) if pd.notna(r["近1月"]) else None,
-                     "return_1y":float(r["近1年"]) if pd.notna(r["近1年"]) else None}
-                    for _,r in sel.iterrows()]
+            pool = go.head(min(30, len(go)))
+            sel = pool.sample(n=min(cnt, len(pool)), random_state=int(now) % 10000 + 1)
+            return [{"code": str(r["基金代码"]), "name": str(r["基金简称"]),
+                     "nav": float(r["单位净值"]) if pd.notna(r["单位净值"]) else None,
+                     "daily_return": float(r["日增长率"]) if pd.notna(r["日增长率"]) else None,
+                     "return_1m": float(r["近1月"]) if pd.notna(r["近1月"]) else None,
+                     "return_1y": float(r["近1年"]) if pd.notna(r["近1年"]) else None}
+                    for _, r in sel.iterrows()]
         except Exception as e:
             print(f"gold_oil err: {e}"); return []
-    res = {}
-    res["hot"] = pick("全部",8,"近1年")
-    res["bond"] = pick("债券型",8,"近1年")
-    res["index"] = pick("指数型",8,"近1年")
-    res["qdii"] = pick("QDII",8,"近1年")
-    res["commodity"] = gold_oil(8)
-    _frec_cache = res; _frec_cache_ts = now
+
+    with _cf.ThreadPoolExecutor(max_workers=4) as ex:
+        f_hot = ex.submit(pick, "全部", 8, "近1年")
+        f_bond = ex.submit(pick, "债券型", 8, "近1年")
+        f_index = ex.submit(pick, "指数型", 8, "近1年")
+        f_qdii = ex.submit(pick, "QDII", 8, "近1年")
+        f_comm = ex.submit(gold_oil, 8)
+        res = {
+            "hot": f_hot.result(),
+            "bond": f_bond.result(),
+            "index": f_index.result(),
+            "qdii": f_qdii.result(),
+            "commodity": f_comm.result(),
+        }
     return res
 
 # ── Fund Holdings ──────────────────────────────────────
+@memo_ttl(300)
 def get_fund_holdings(code: str) -> dict:
     try:
         sdf = ak.fund_portfolio_hold_em(symbol=code)

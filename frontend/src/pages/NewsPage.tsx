@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Spin, Typography, Tag, Empty } from "antd";
+import { Spin, Skeleton, Typography, Tag, Empty } from "antd";
 import { LinkOutlined, ClockCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { getNews } from "../api/client";
 
@@ -76,8 +76,8 @@ export default function NewsPage() {
 
   if (initialLoading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1 }}>
-        <Spin size="large" />
+      <div style={{ flex: 1, padding: 24 }}>
+        <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
   }

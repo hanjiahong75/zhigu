@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from .stock_data import search_stocks, get_realtime_quote, get_kline_data, get_market_indices
 from .technical import calc_all_indicators
+from .signal_service import compute_signal
 from .retrieval import build_context_prompt
 from ..models.database import SessionLocal
 from ..models.stock import WatchlistItem
@@ -248,6 +249,21 @@ AGENT_TOOLS = [
                     "market": {"type": "string", "description": "市场：hk/us/jp/kr"}
                 },
                 "required": ["code", "market"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_strategy_signal",
+            "description": "获取A股股票的综合买卖信号：返回评级（强烈买入/买入/观望/卖出/强烈卖出）、得分（-1~1）、置信度及各分项信号（均线金叉死叉、MACD、RSI、布林带、量比）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "股票代码，如600519"},
+                    "market": {"type": "string", "description": "市场，sh(上海)或sz(深圳)，默认sz"}
+                },
+                "required": ["code"]
             }
         }
     },
@@ -635,6 +651,14 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
             if "error" in indicators:
                 return json.dumps({"found": False, "message": indicators["error"]}, ensure_ascii=False)
             return json.dumps({"found": True, "indicators": indicators}, ensure_ascii=False)
+
+        elif tool_name == "get_strategy_signal":
+            code = arguments.get("code", "")
+            market = arguments.get("market", "sz")
+            signal = compute_signal(code, market)
+            if "error" in signal:
+                return json.dumps({"error": signal["error"]}, ensure_ascii=False)
+            return json.dumps(signal, ensure_ascii=False)
 
         else:
             return json.dumps({"error": f"未知工具: {tool_name}"}, ensure_ascii=False)

@@ -1,8 +1,20 @@
 ﻿;
+import type { StockQuote, KlineItem } from "../types";
+
 const GLOBAL_MARKETS = ["kr", "jp", "us", "hk"];
 function isGlobalMarket(market: string) { return GLOBAL_MARKETS.includes(market); }
 
 const API_BASE = "/api";
+
+/** Tiny session-level TTL cache so revisiting a module doesn't refetch. */
+const memCache = new Map<string, { ts: number; data: any }>();
+async function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {
+  const hit = memCache.get(key);
+  if (hit && Date.now() - hit.ts < ttl * 1000) return hit.data as T;
+  const data = await fn();
+  memCache.set(key, { ts: Date.now(), data });
+  return data;
+}
 
 export const PERIODS: Record<string, string> = {
   "1": "1分", "5": "5分", "15": "15分", "30": "30分", "60": "60分", "120": "120分",
@@ -24,9 +36,11 @@ export async function searchStocks(keyword: string) {
 }
 
 export async function getMarketIndices() {
-  const resp = await fetch(`${API_BASE}/indices`);
-  const data = await resp.json();
-  return data.indices || [];
+  return cached("mkt", 30, async () => {
+    const resp = await fetch(`${API_BASE}/indices`);
+    const data = await resp.json();
+    return data.indices || [];
+  });
 }
 
 export async function getStockQuote(code: string, market = "sz") {
@@ -36,17 +50,21 @@ export async function getStockQuote(code: string, market = "sz") {
   return resp.json();
 }
 
-export async function getKlineData(code: string, market = "sz", days = 10000, klt = "101") {
+export async function getKlineData(code: string, market = "sz", days = 300, klt = "101") {
   const base = isGlobalMarket(market) ? "/global/kline" : "/kline";
-  const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
-  return resp.json();
+  return cached(`kl:${code}:${market}:${days}:${klt}`, 60, async () => {
+    const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
+    return resp.json();
+  });
 }
 
-export async function getIndicators(code: string, market = "sz", days = 10000, klt = "101") {
+export async function getIndicators(code: string, market = "sz", days = 300, klt = "101") {
   const base = isGlobalMarket(market) ? "/global/indicators" : "/indicators";
-  const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
-  if (!resp.ok) throw new Error("Indicators not available");
-  return resp.json();
+  return cached(`ind:${code}:${market}:${days}:${klt}`, 60, async () => {
+    const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
+    if (!resp.ok) throw new Error("Indicators not available");
+    return resp.json();
+  });
 }
 
 export async function getIntraday(code: string, date: string, klt = "1") {
@@ -66,15 +84,19 @@ export async function getAnalysis(code: string, market = "sz", userMessage = "")
 }
 
 export async function getWatchlist() {
-  const resp = await fetch(`${API_BASE}/watchlist`);
-  return resp.json();
+  return cached("watchlist", 10, async () => {
+    const resp = await fetch(`${API_BASE}/watchlist`);
+    return resp.json();
+  });
 }
 
 export async function getWatchlistQuotes(codes: string[]) {
-  const params = codes.map(c => `codes=${encodeURIComponent(c)}`).join("&");
-  const resp = await fetch(`${API_BASE}/watchlist/quotes?${params}`);
-  if (!resp.ok) return [];
-  return resp.json();
+  return cached(`wq:${codes.join(",")}`, 5, async () => {
+    const params = codes.map(c => `codes=${encodeURIComponent(c)}`).join("&");
+    const resp = await fetch(`${API_BASE}/watchlist/quotes?${params}`);
+    if (!resp.ok) return [];
+    return resp.json();
+  });
 }
 
 export async function addToWatchlist(code: string, name: string, market = "sz") {
@@ -119,6 +141,132 @@ export async function getChatThreads() {
   return resp.json();
 }
 
+export interface ChatStreamStockData {
+  stock_code?: string;
+  stock_name?: string;
+  market?: string;
+  quote?: StockQuote | null;
+  kline?: KlineItem[] | null;
+  indicators?: any;
+  source?: string;
+  signal_update?: { old_rating?: string; new_rating?: string; reason?: string; ts?: number } | null;
+}
+
+export interface ChatStreamHandlers {
+  onMeta?: (meta: { thread_id?: string; stock_code?: string; stock_name?: string; market?: string }) => void;
+  onDelta?: (content: string) => void;
+  onStockData?: (data: ChatStreamStockData | null) => void;
+  onDone?: (info: { message_id?: number; thread_id?: string; content?: string }) => void;
+  onError?: (message: string) => void;
+}
+
+/** Send a chat message and consume the SSE stream from /api/chat/stream (M4). */
+export async function sendChatMessageStream(
+  message: string,
+  threadId = "",
+  handlers: ChatStreamHandlers = {},
+  signal?: AbortSignal,
+) {
+  const resp = await fetch(`${API_BASE}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, thread_id: threadId }),
+    signal,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => null);
+    throw new Error(err?.detail || "Chat failed");
+  }
+  if (!resp.body) throw new Error("No stream body");
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6);
+      if (payload === "[DONE]") continue;
+      try {
+        const msg = JSON.parse(payload);
+        if (msg.type === "meta") handlers.onMeta?.(msg);
+        else if (msg.type === "delta") handlers.onDelta?.(msg.content ?? "");
+        else if (msg.type === "stock_data") handlers.onStockData?.(msg.stock_data);
+        else if (msg.type === "done") handlers.onDone?.({
+          message_id: msg.message_id,
+          thread_id: msg.thread_id,
+          content: msg.content,
+        });
+        else if (msg.type === "error") handlers.onError?.(msg.message);
+      } catch {
+        // ignore malformed frames
+      }
+    }
+    if (done) break;
+  }
+}
+
+export async function getStockSignal(code: string, market = "sz") {
+  return cached(`sig:${code}:${market}`, 30, async () => {
+    const resp = await fetch(`${API_BASE}/signal?code=${encodeURIComponent(code)}&market=${encodeURIComponent(market)}`);
+    if (!resp.ok) throw new Error("Signal failed");
+    return resp.json();
+  });
+}
+
+export interface ThreadWatch {
+  id: number;
+  thread_id: string;
+  code: string;
+  name: string;
+  market: string;
+  last_rating?: string;
+  last_price?: number;
+  last_signal_ts?: number;
+}
+
+export async function getThreadWatches(threadId: string) {
+  const resp = await fetch(`${API_BASE}/chat/threads/${encodeURIComponent(threadId)}/watches`);
+  if (!resp.ok) return [];
+  return resp.json() as Promise<ThreadWatch[]>;
+}
+
+export async function addThreadWatch(threadId: string, code: string, market = "sz", name = "") {
+  const resp = await fetch(`${API_BASE}/chat/threads/${encodeURIComponent(threadId)}/watches`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, market, name }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => null);
+    throw new Error(err?.detail || "添加盯盘失败");
+  }
+  return resp.json();
+}
+
+export async function removeThreadWatch(threadId: string, code: string) {
+  const resp = await fetch(`${API_BASE}/chat/threads/${encodeURIComponent(threadId)}/watches?code=${encodeURIComponent(code)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error("移除盯盘失败");
+  return resp.json();
+}
+
+export async function refreshThreadWatch(threadId: string, code: string) {
+  const resp = await fetch(`${API_BASE}/chat/threads/${encodeURIComponent(threadId)}/watches/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!resp.ok) throw new Error("刷新建议失败");
+  return resp.json();
+}
+
 export async function getChatThreadMessages(threadId: string) {
   const resp = await fetch(`${API_BASE}/chat/threads/${threadId}`);
   if (!resp.ok) return [];
@@ -143,8 +291,10 @@ export async function deleteChatThread(threadId: string) {
 // --- Portfolio APIs ---
 
 export async function getPortfolio() {
-  const resp = await fetch(`${API_BASE}/portfolio`);
-  return resp.json();
+  return cached("pf", 15, async () => {
+    const resp = await fetch(`${API_BASE}/portfolio`);
+    return resp.json();
+  });
 }
 
 export async function uploadPortfolioImage(file: File) {
@@ -180,9 +330,11 @@ export async function updatePortfolioItems(items: Array<{
 
 
 export async function getPortfolioRisk() {
-  const resp = await fetch(`${API_BASE}/portfolio/risk`);
-  if (!resp.ok) return { sharpe_ratio: null, max_drawdown: null };
-  return resp.json();
+  return cached("pfr", 30, async () => {
+    const resp = await fetch(`${API_BASE}/portfolio/risk`);
+    if (!resp.ok) return { sharpe_ratio: null, max_drawdown: null };
+    return resp.json();
+  });
 }
 
 export async function getPortfolioDiagnosis() {
@@ -198,39 +350,51 @@ export async function deletePortfolio() {
 }
 
 export async function getNews(page = 1, limit = 20) {
-  const resp = await fetch(`${API_BASE}/news?page=${page}&limit=${limit}&_t=${Date.now()}`);
-  if (!resp.ok) return { news: [], total: 0 };
-  return resp.json();
+  return cached(`news:${page}:${limit}`, 120, async () => {
+    const resp = await fetch(`${API_BASE}/news?page=${page}&limit=${limit}`);
+    if (!resp.ok) return { news: [], total: 0 };
+    return resp.json();
+  });
 }
 
 export async function searchFunds(keyword: string) {
-  const resp = await fetch(`${API_BASE}/funds/search?keyword=${encodeURIComponent(keyword)}`);
-  if (!resp.ok) return [];
-  return resp.json();
+  return cached(`fs:${keyword}`, 300, async () => {
+    const resp = await fetch(`${API_BASE}/funds/search?keyword=${encodeURIComponent(keyword)}`);
+    if (!resp.ok) return [];
+    return resp.json();
+  });
 }
 
 export async function getFundNav(code: string) {
-  const resp = await fetch(`${API_BASE}/funds/nav?code=${encodeURIComponent(code)}`);
-  if (!resp.ok) throw new Error("Fund not found");
-  return resp.json();
+  return cached(`fn:${code}`, 300, async () => {
+    const resp = await fetch(`${API_BASE}/funds/nav?code=${encodeURIComponent(code)}`);
+    if (!resp.ok) throw new Error("Fund not found");
+    return resp.json();
+  });
 }
 
 export async function getFundRecommendations() {
-  const resp = await fetch(`${API_BASE}/funds/recommend`);
-  if (!resp.ok) return { hot: [], bond: [], index: [], qdii: [], commodity: [] };
-  return resp.json();
+  return cached("frec", 300, async () => {
+    const resp = await fetch(`${API_BASE}/funds/recommend`);
+    if (!resp.ok) return { hot: [], bond: [], index: [], qdii: [], commodity: [] };
+    return resp.json();
+  });
 }
 
 export async function getFundHoldings(code: string) {
-  const resp = await fetch(`${API_BASE}/funds/holdings?code=${encodeURIComponent(code)}`);
-  if (!resp.ok) return { stocks: [], industries: [], quarter: "" };
-  return resp.json();
+  return cached(`fh:${code}`, 300, async () => {
+    const resp = await fetch(`${API_BASE}/funds/holdings?code=${encodeURIComponent(code)}`);
+    if (!resp.ok) return { stocks: [], industries: [], quarter: "" };
+    return resp.json();
+  });
 }
 
 export async function getGlobalIndices() {
-  const resp = await fetch(`${API_BASE}/global-indices`);
-  if (!resp.ok) return [];
-  return resp.json();
+  return cached("gmkt", 30, async () => {
+    const resp = await fetch(`${API_BASE}/global-indices`);
+    if (!resp.ok) return [];
+    return resp.json();
+  });
 }
 
 // --- User Profile APIs ---

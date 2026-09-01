@@ -1,5 +1,6 @@
 ﻿from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.sql import func
 from .database import Base
 
@@ -48,6 +49,19 @@ class ChatMessage(Base):
     stock_code = Column(String(20), default='')
     stock_name = Column(String(50), default='')
     stock_data = Column(Text, default='')
+    created_at = Column(DateTime, server_default=func.now())
+
+class ChatThreadWatch(Base):
+    __tablename__ = 'chat_thread_watches'
+    __table_args__ = (UniqueConstraint('thread_id', 'code', name='uq_thread_watch'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(String(36), nullable=False, index=True)
+    code = Column(String(20), nullable=False)
+    name = Column(String(50), default='')
+    market = Column(String(10), default='sz')
+    last_rating = Column(String(20), default='')
+    last_price = Column(Float, default=0)
+    last_signal_ts = Column(Float, default=0)
     created_at = Column(DateTime, server_default=func.now())
 
 class Portfolio(Base):

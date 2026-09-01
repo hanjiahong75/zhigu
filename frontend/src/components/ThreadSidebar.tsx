@@ -63,9 +63,9 @@ export default function ThreadSidebar() {
   return (
     <>
       {/* Sidebar */}
-      <div style={{
+      <div className="glass-panel" style={{
         width: collapsed ? 44 : 180, borderRight: "1px solid var(--border-color)",
-        background: "var(--bg-sidebar)", display: "flex", flexDirection: "column",
+        background: "transparent", display: "flex", flexDirection: "column",
         overflow: "hidden", flexShrink: 0, transition: "width 0.2s ease",
       }}>
         {/* Header */}

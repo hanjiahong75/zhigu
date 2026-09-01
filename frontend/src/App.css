@@ -17,3 +17,309 @@ body {
 .ant-layout-header {
   line-height: 56px !important;
 }
+
+
+/* ── Auth (login/register) Apple-style glassmorphism ── */
+.auth-root {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.auth-blobs {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.auth-blob {
+  position: absolute;
+  width: 42vmax;
+  height: 42vmax;
+  border-radius: 50%;
+  filter: blur(64px);
+  opacity: 0.55;
+  animation: auroraDrift 26s ease-in-out infinite alternate;
+}
+
+.auth-blob-1 {
+  top: -12vmax;
+  left: -10vmax;
+  background: radial-gradient(circle, rgba(22, 119, 255, 0.45), transparent 70%);
+}
+
+.auth-blob-2 {
+  bottom: -14vmax;
+  right: -10vmax;
+  background: radial-gradient(circle, rgba(124, 92, 255, 0.4), transparent 70%);
+  animation-delay: -8s;
+}
+
+.auth-blob-3 {
+  top: 40%;
+  left: 55%;
+  width: 30vmax;
+  height: 30vmax;
+  background: radial-gradient(circle, rgba(255, 120, 180, 0.3), transparent 70%);
+  animation-delay: -16s;
+}
+
+[data-theme="dark"] .auth-blob {
+  opacity: 0.4;
+}
+[data-theme="dark"] .auth-blob-1 { background: radial-gradient(circle, rgba(22, 119, 255, 0.35), transparent 70%); }
+[data-theme="dark"] .auth-blob-2 { background: radial-gradient(circle, rgba(124, 92, 255, 0.3), transparent 70%); }
+[data-theme="dark"] .auth-blob-3 { background: radial-gradient(circle, rgba(255, 120, 180, 0.18), transparent 70%); }
+
+.auth-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  text-align: center;
+  animation: loginRise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-overline {
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.auth-title {
+  font-size: clamp(40px, 8vw, 64px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+}
+
+.auth-subtitle {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin: 0 0 28px;
+}
+
+.auth-card {
+  border-radius: 24px;
+  padding: 32px 28px;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+  animation: loginRise 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+}
+
+[data-theme="dark"] .auth-card {
+  background: rgba(22, 22, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.auth-logo {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.15);
+}
+
+[data-theme="dark"] .auth-logo {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Glass inputs */
+.auth-card .ant-input,
+.auth-card .ant-input-affix-wrapper {
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.auth-card .ant-input-affix-wrapper {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+}
+/* Strip any box styling off the inner input (Password / prefixed Input) so only
+   the single outer .ant-input-affix-wrapper renders as the glass box. */
+.auth-card .ant-input-affix-wrapper .ant-input {
+  height: auto;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 11px;
+}
+[data-theme="dark"] .auth-card .ant-input,
+[data-theme="dark"] .auth-card .ant-input-affix-wrapper {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.auth-card .ant-input-affix-wrapper:hover,
+.auth-card .ant-input-affix-wrapper:focus-within,
+.auth-card .ant-input:hover,
+.auth-card .ant-input:focus {
+  border-color: #1677ff !important;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.14);
+}
+
+/* Browser autofill / paste: neutralize the default white box to match the theme.
+   Chrome paints -webkit-autofill with a UA background that ignores `background`,
+   so an inset box-shadow is used to cover it. */
+.auth-card input:-webkit-autofill,
+.auth-card input:-webkit-autofill:hover,
+.auth-card input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
+  background-color: transparent !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+[data-theme="dark"] .auth-card input:-webkit-autofill,
+[data-theme="dark"] .auth-card input:-webkit-autofill:hover,
+[data-theme="dark"] .auth-card input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #1f1f1f inset !important;
+}
+
+/* Pill primary button */
+.auth-card .ant-btn-primary {
+  height: 48px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  background: linear-gradient(135deg, #1677ff 0%, #7c5cff 100%);
+  box-shadow: 0 8px 24px rgba(22, 119, 255, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.auth-card .ant-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(22, 119, 255, 0.42);
+}
+.auth-card .ant-btn-primary:active {
+  transform: translateY(0);
+}
+
+.auth-link {
+  color: #1677ff;
+  font-weight: 500;
+}
+.auth-link:hover {
+  color: #7c5cff;
+}
+
+/* Reduced motion: disable all decorative animation */
+@media (prefers-reduced-motion: reduce) {
+  .auth-blob,
+  .auth-content,
+  .auth-card {
+    animation: none !important;
+  }
+}
+
+/* Fallback when backdrop-filter unsupported */
+@supports not (backdrop-filter: blur(1px)) {
+  .auth-card {
+    background: rgba(255, 255, 255, 0.94);
+  }
+  [data-theme="dark"] .auth-card {
+    background: rgba(22, 22, 28, 0.94);
+  }
+}
+
+@keyframes auroraDrift {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3vw, -2vw) scale(1.15); }
+  100% { transform: translate(-2vw, 2vw) scale(0.95); }
+}
+
+@keyframes loginRise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ── Liquid glass system (main app) ── */
+.glass-nav {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+}
+[data-theme="dark"] .glass-nav {
+  background: rgba(22, 22, 28, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel,
+.glass-card {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+}
+[data-theme="dark"] .glass-panel,
+[data-theme="dark"] .glass-card {
+  background: rgba(22, 22, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.glass-chip {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+[data-theme="dark"] .glass-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.bg-aurora {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.bg-aurora .auth-blob {
+  opacity: 0.35;
+}
+
+[data-theme="dark"] .bg-aurora .auth-blob {
+  opacity: 0.25;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-blob {
+    animation: none !important;
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-nav,
+  .glass-panel,
+  .glass-card {
+    background: var(--bg-secondary);
+  }
+}

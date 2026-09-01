@@ -1,12 +1,16 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..models.database import get_db, SessionLocal
-from ..models.stock import WatchlistItem, AnalysisCache, ChatThread, ChatMessage, PortfolioItem
+from ..models.stock import WatchlistItem, AnalysisCache, ChatThread, ChatMessage, PortfolioItem, User
 from ..services.stock_data import search_stocks, get_realtime_quote, get_kline_data, get_market_indices, get_intraday, get_news, search_funds, get_fund_nav, get_fund_recommendations, get_fund_holdings, get_global_indices
 from ..services.ai_analysis import get_analysis, summarize_kline
 from ..services.technical import calc_all_indicators
+from ..services.signal_service import compute_signal
+from ..services.watch_service import (
+    register_watch, list_watches, delete_watch, get_watch_monitor, get_thread_broker,
+)
 from ..services.retrieval import build_context_prompt
 from ..services.memory import store_memory
 from ..services.summarizer import should_summarize, generate_summary
@@ -68,6 +72,16 @@ def _get_wechat_logger():
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = ""
+
+
+class WatchRequest(BaseModel):
+    code: str
+    market: str = "sz"
+    name: str = ""
+
+
+class RefreshRequest(BaseModel):
+    code: str
 
 class PortfolioItemUpdate(BaseModel):
     stock_code: str
@@ -227,6 +241,12 @@ def api_indicators(code: str = Query(...), market: str = Query('sz'), days: int 
     return {'kline': kline, 'indicators': indicators}
 
 
+@router.get('/signal')
+def api_signal(code: str = Query(...), market: str = Query('sz')):
+    """Composite buy/sell signal for a stock (M3)."""
+    return compute_signal(code, market)
+
+
 @router.get('/analyze')
 async def api_analyze(
     code: str = Query(...),
@@ -357,6 +377,128 @@ async def api_chat(req: ChatRequest, db: Session = Depends(get_db)):
     }
 
 
+@router.post('/chat/stream')
+async def api_chat_stream(req: ChatRequest, db: Session = Depends(get_db)):
+    """Streaming unified chat (M4): meta -> delta* -> stock_data -> done.
+
+    Reuses chat_agent_stream (tool rounds non-streaming, final answer streamed)
+    and translates its OpenAI-style frames into the web event protocol.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail='Message cannot be empty')
+
+    thread_id = req.thread_id
+    if not thread_id:
+        thread_id = str(uuid.uuid4())
+        thread = ChatThread(id=thread_id, title=req.message[:50])
+        db.add(thread)
+        db.commit()
+    else:
+        thread = db.query(ChatThread).filter(ChatThread.id == thread_id).first()
+
+    # Load conversation history
+    history = []
+    if thread_id:
+        past = db.query(ChatMessage).filter(
+            ChatMessage.thread_id == thread_id
+        ).order_by(ChatMessage.created_at.asc()).all()
+        for m in past:
+            history.append({"role": m.role, "content": m.content})
+
+    # Save user message
+    user_msg = ChatMessage(thread_id=thread_id, role="user", content=req.message)
+    db.add(user_msg)
+    db.commit()
+
+    async def gen():
+        meta = {}
+        try:
+            yield _sse({"type": "meta", "thread_id": thread_id})
+            async for frame in chat_agent_stream(
+                user_message=req.message,
+                conversation_history=history,
+                thread_id=thread_id,
+                db=db,
+            ):
+                if frame.startswith(":__meta__"):
+                    try:
+                        meta = json.loads(frame[len(":__meta__"):].strip())
+                    except json.JSONDecodeError:
+                        meta = {}
+                    continue
+                if frame.startswith("data: [DONE]"):
+                    continue
+                if not frame.startswith("data: "):
+                    continue
+                try:
+                    chunk = json.loads(frame[len("data: "):].strip())
+                    choices = chunk.get("choices") or []
+                    if choices:
+                        delta = choices[0].get("delta", {}) or {}
+                        content = delta.get("content", "")
+                        if content:
+                            yield _sse({"type": "delta", "content": content})
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+            reply = meta.get("full_reply", "")
+            if reply:
+                msg_type = meta.get("type", "general")
+                stock_data_json = ""
+                if msg_type == "stock":
+                    stock_payload = {
+                        "stock_code": meta.get("stock_code", ""),
+                        "stock_name": meta.get("stock_name", ""),
+                        "market": meta.get("market", ""),
+                        "quote": meta.get("quote"),
+                        "kline": meta.get("kline"),
+                        "indicators": meta.get("indicators"),
+                    }
+                    stock_data_json = json.dumps(stock_payload, ensure_ascii=False)
+                    yield _sse({"type": "stock_data", "stock_data": stock_payload})
+                    try:
+                        register_watch(thread_id, meta.get("stock_code", ""),
+                                       meta.get("market", "sz"), meta.get("stock_name", ""))
+                    except Exception:
+                        pass
+                assistant_msg = ChatMessage(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=reply,
+                    stock_code=meta.get("stock_code", ""),
+                    stock_name=meta.get("stock_name", ""),
+                    stock_data=stock_data_json,
+                )
+                db.add(assistant_msg)
+                db.commit()
+                if thread and (not thread.title or thread.title == req.message[:50]):
+                    try:
+                        title = await generate_title(req.message, reply)
+                        thread.title = title
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                yield _sse({"type": "done", "message_id": assistant_msg.id,
+                            "thread_id": thread_id, "content": reply})
+            else:
+                yield _sse({"type": "done", "thread_id": thread_id})
+            yield "data: [DONE]\n\n"
+        except Exception:
+            db.rollback()
+            yield _sse({"type": "error", "message": "服务暂时不可用，请稍后再试"})
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.get('/chat/threads')
 def api_chat_threads(db: Session = Depends(get_db)):
     """List all chat threads."""
@@ -437,6 +579,64 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+@router.get('/chat/threads/{thread_id}/watches')
+def api_thread_watches(thread_id: str):
+    """List the thread's watch list (M5)."""
+    return list_watches(thread_id)
+
+
+@router.post('/chat/threads/{thread_id}/watches')
+def api_add_thread_watch(thread_id: str, req: WatchRequest):
+    """Register a stock for the thread's watch list (M5)."""
+    return register_watch(thread_id, req.code, req.market, req.name)
+
+
+@router.delete('/chat/threads/{thread_id}/watches')
+def api_delete_thread_watch(thread_id: str, code: str = Query(...)):
+    """Remove a stock from the thread's watch list (M5)."""
+    ok = delete_watch(thread_id, code)
+    if not ok:
+        raise HTTPException(status_code=404, detail='盯盘记录不存在')
+    return {"ok": True}
+
+
+@router.post('/chat/threads/{thread_id}/watches/refresh')
+async def api_refresh_thread_watch(thread_id: str, req: RefreshRequest):
+    """Manually re-evaluate one watch and push an advice update (M5)."""
+    return await get_watch_monitor().refresh_now(thread_id, req.code)
+
+
+@router.get('/chat/threads/{thread_id}/stream')
+async def api_thread_stream(thread_id: str, interval: int = Query(0, ge=0, le=60)):
+    """SSE stream of realtime conversation events (M5): advice_update etc."""
+    broker = get_thread_broker()
+    queue = broker.subscribe(thread_id)
+    if interval >= 3:
+        get_watch_monitor().set_interval(interval)
+
+    async def gen():
+        try:
+            yield _sse({"type": "watch_connected", "thread_id": thread_id})
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield _sse(event)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            broker.unsubscribe(thread_id, queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.post('/auth/register')
 def api_register(req: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user."""
@@ -503,6 +703,35 @@ def api_watchlist(db: Session = Depends(get_db)):
     return [{'id': i.id, 'code': i.code, 'name': i.name, 'market': i.market} for i in items]
 
 
+# --- 微信小程序登录 ---
+class WxLoginRequest(BaseModel):
+    code: str
+
+@router.post('/auth/wx-login')
+def wx_login(req: WxLoginRequest, db: Session = Depends(get_db)):
+    import requests as wx_req
+    wx_appid = os.getenv("WX_APPID", "")
+    wx_secret = os.getenv("WX_SECRET", "")
+    if not wx_appid or not wx_secret:
+        raise HTTPException(500, "WX_APPID/WX_SECRET not configured in .env")
+    wx_url = f"https://api.weixin.qq.com/sns/jscode2session?appid={wx_appid}&secret={wx_secret}&js_code={req.code}&grant_type=authorization_code"
+    resp = wx_req.get(wx_url)
+    wx_data = resp.json()
+    if "errcode" in wx_data and wx_data["errcode"] != 0:
+        raise HTTPException(400, f"wx login failed: {wx_data.get('errmsg', '')}")
+    openid = wx_data["openid"]
+    wx_username = f"wx_{openid}"
+    user = db.query(User).filter(User.username == wx_username).first()
+    if not user:
+        from ..services.auth_service import hash_password, create_access_token
+        user = User(username=wx_username, nickname="微信用户", password_hash="")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    token = create_access_token({"sub": str(user.id), "username": user.username})
+    return {"token": token, "user_id": str(user.id), "nickname": user.nickname}
+
+
 @router.post('/watchlist')
 def api_add_watchlist(code: str = Query(...), name: str = Query(...), market: str = Query('sz'),
                       db: Session = Depends(get_db)):
@@ -530,6 +759,55 @@ def api_watchlist_quotes(codes: list[str] = Query(...)):
         if q:
             results.append(q)
     return results
+
+
+def _sse(data: dict) -> str:
+    """Format an SSE data frame."""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.get('/quotes/stream')
+async def api_quotes_stream(codes: str = Query(''), interval: int = Query(0, ge=0, le=60)):
+    """SSE stream of realtime quotes (M2).
+
+    Subscribes the poller to the given codes, pushes an initial snapshot,
+    then pushes one frame per poll round. Emits ': ping' heartbeats when idle.
+    """
+    from ..services.quote_poller import get_quote_poller
+
+    wanted = [c.strip() for c in codes.split(',') if c.strip()]
+    poller = get_quote_poller()
+    poller.register_codes(wanted)
+    sub_id, queue = poller.add_subscriber(interval)
+
+    async def gen():
+        try:
+            # Initial snapshot (may be empty until the first poll round fills cache)
+            yield _sse(poller.snapshot(wanted if wanted else None))
+            wanted_set = set(wanted)
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15)
+                    quotes = msg.get("quotes", [])
+                    if wanted_set:
+                        quotes = [q for q in quotes if q.get("code") in wanted_set]
+                    if quotes:
+                        yield _sse({"type": "quotes", "ts": msg.get("ts", 0), "quotes": quotes})
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            poller.remove_subscriber(sub_id)
+            poller.unregister_codes(wanted)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get('/history')

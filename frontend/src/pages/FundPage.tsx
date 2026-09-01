@@ -1,5 +1,5 @@
 ﻿import { useState, useRef, useEffect, useCallback } from "react";
-import { Modal, Typography, Tag, Spin, Empty, message } from "antd";
+import { Modal, Typography, Tag, Spin, Skeleton, Empty, message } from "antd";
 import { SearchOutlined, FundOutlined, PlusOutlined, CheckOutlined, ArrowUpOutlined, ArrowDownOutlined } from "@ant-design/icons";
 import { createChart, ColorType } from "lightweight-charts";
 import { searchFunds, getFundNav, getFundRecommendations, getFundHoldings, addToWatchlist, getWatchlist, removeFromWatchlist } from "../api/client";
@@ -247,7 +247,7 @@ export default function FundPage() {
           // Search results
           <>
             {searching ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: 40 }}><Spin /></div>
+              <div style={{ padding: 24 }}><Skeleton active paragraph={{ rows: 6 }} /></div>
             ) : results.length === 0 ? (
               <Empty description="未找到相关基金" style={{ marginTop: 60 }} />
             ) : (

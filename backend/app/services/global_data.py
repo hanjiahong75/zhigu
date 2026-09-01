@@ -9,6 +9,7 @@ Data routing:
 import json
 import logging
 from tradingview_ta import TA_Handler, Interval
+from .cache_utils import memo_ttl
 
 from .global_symbols import search_popular, get_stock_name
 
@@ -376,6 +377,7 @@ def get_global_indicators(code: str, market: str) -> dict:
     }
 
 
+@memo_ttl(30)
 def get_global_indices() -> list[dict]:
     """Get major global market indices."""
     try:

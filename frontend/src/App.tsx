@@ -97,8 +97,7 @@ function AppLayout() {
 
   return (
     <Layout style={{ height: "100vh", overflow: "hidden", background: "var(--bg-primary)" }}>
-      <Header style={{
-        background: "var(--bg-header)", borderBottom: "1px solid var(--border-color)",
+      <Header className="glass-nav" style={{
         display: "flex", alignItems: "center", padding: "0 24px", height: 56,
       }}>
         <Title level={4} style={{ margin: 0, cursor: "pointer", color: "var(--text-primary)" }}
@@ -120,14 +119,18 @@ function AppLayout() {
         </Dropdown>
       </Header>
 
-      <Content style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <Content style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+        <div className="bg-aurora" aria-hidden="true">
+          <div className="auth-blob auth-blob-1" />
+          <div className="auth-blob auth-blob-2" />
+          <div className="auth-blob auth-blob-3" />
+        </div>
         {/* Content area */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", position: "relative", zIndex: 1 }}>
           {/* Top bar: shared search (all pages except holdings) */}
           {showSearch && (
-            <div style={{
-              padding: "10px 24px", borderBottom: "1px solid var(--border-color)",
-              background: "var(--bg-secondary)", flexShrink: 0,
+            <div className="glass-nav" style={{
+              padding: "10px 24px", flexShrink: 0,
             }}>
               <StockSearch
                 onSelect={handleSearchSelect}

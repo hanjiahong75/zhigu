@@ -2,6 +2,7 @@
 import { List, Tag, Typography, Popconfirm, message } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import { getWatchlist, getWatchlistQuotes, removeFromWatchlist } from "../api/client";
+import { useQuoteStream } from "../api/useQuoteStream";
 import type { WatchlistItem, StockQuote } from "../types";
 
 const { Text } = Typography;
@@ -14,6 +15,14 @@ interface Props {
 export default function WatchlistPage({ onSelectStock }: Props) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [quotes, setQuotes] = useState<StockQuote[]>([]);
+  const watchCodes = items.map((i) => i.code);
+  const liveQuotes = useQuoteStream(watchCodes, 10, watchCodes.length > 0);
+
+  // Keep the displayed quotes in sync with the realtime SSE stream.
+  useEffect(() => {
+    const codes = items.map((i) => i.code);
+    setQuotes(codes.map((c) => liveQuotes[c]).filter((q): q is StockQuote => Boolean(q)));
+  }, [liveQuotes, items]);
 
   const load = async () => {
     try {

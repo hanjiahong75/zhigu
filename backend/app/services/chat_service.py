@@ -642,6 +642,32 @@ async def chat_agent(
     return {"reply": "分析过程较长，请稍后重新提问（可尝试简化问题）", "type": "error"}
 
 
+def _build_stock_meta(stock_info: dict) -> dict:
+    """Attach quote/kline/indicators for a detected stock (shared by chat_agent paths)."""
+    meta = {"type": "general", "stock_code": "", "stock_name": "", "market": "",
+            "quote": None, "kline": None, "indicators": None}
+    if not stock_info.get("code"):
+        return meta
+    try:
+        from .stock_data import get_realtime_quote, get_kline_data
+        from .technical import calc_all_indicators
+        quote = get_realtime_quote(stock_info["code"], stock_info["market"])
+        kline = get_kline_data(stock_info["code"], stock_info["market"], 10000)
+        indicators = calc_all_indicators(kline) if kline else None
+        meta.update({
+            "type": "stock",
+            "stock_code": stock_info["code"],
+            "stock_name": stock_info["name"] or (quote["name"] if quote else stock_info["code"]),
+            "market": stock_info["market"],
+            "quote": quote,
+            "kline": kline,
+            "indicators": indicators,
+        })
+    except Exception:
+        pass
+    return meta
+
+
 async def chat_agent_stream(
     user_message: str,
     conversation_history: list[dict] = None,
@@ -653,6 +679,8 @@ async def chat_agent_stream(
     Tool execution rounds are non-streaming.
     Final response round is streamed.
     """
+    stock_info = {"code": "", "name": "", "market": "sz"}  # Track detected stock
+
     def _sse_chunk(content: str, finish_reason: str = None) -> str:
         delta = {"content": content}
         choice = {"index": 0, "delta": delta}
@@ -825,7 +853,9 @@ async def chat_agent_stream(
             yield _sse_done()
 
             # Metadata for persistence
-            yield f":__meta__{json.dumps({'full_reply': full_reply, 'type': 'general', 'stock_code': '', 'stock_name': '', 'market': '', 'quote': None, 'kline': None}, ensure_ascii=False)}\n\n"
+            meta = _build_stock_meta(stock_info)
+            meta["full_reply"] = full_reply
+            yield f":__meta__{json.dumps(meta, ensure_ascii=False)}\n\n"
             return
 
     # Exhausted

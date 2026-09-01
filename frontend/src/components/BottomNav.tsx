@@ -17,10 +17,10 @@ export default function BottomNav() {
   const location = useLocation();
 
   return (
-    <div style={{
+    <div className="glass-nav" style={{
       display: "flex", height: 52, flexShrink: 0,
-      borderTop: "1px solid var(--border-color)",
-      background: "var(--bg-secondary)",
+      borderTop: "1px solid rgba(255, 255, 255, 0.35)",
+      borderBottom: "none",
     }}>
       {tabs.map((tab) => {
         const active = location.pathname.startsWith(tab.path);

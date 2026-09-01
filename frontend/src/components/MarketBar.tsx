@@ -32,7 +32,7 @@ export default function MarketBar() {
       {indices.map((idx) => {
         const isUp = idx.change_pct >= 0;
         return (
-          <div key={idx.code} style={{ fontSize: 12 }}>
+          <div key={idx.code} className="glass-chip" style={{ fontSize: 12, padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ color: "#888", marginRight: 4 }}>{idx.name}</span>
             <span style={{ fontWeight: 600, marginRight: 4 }}>
               {idx.price.toFixed(2)}

@@ -17,6 +17,10 @@ CHAT_TIMEOUT_SECONDS = int(os.getenv("CHAT_TIMEOUT_SECONDS", "25"))
 MAX_HISTORY_PAIRS = int(os.getenv("MAX_HISTORY_PAIRS", "10"))
 LOG_DIR = os.getenv("LOG_DIR", str(Path(__file__).resolve().parent.parent / "logs"))
 
+# Phase 6 (M2): Real-time quote polling
+QUOTE_POLL_INTERVAL_SECONDS = int(os.getenv("QUOTE_POLL_INTERVAL_SECONDS", "10"))
+QUOTE_POLL_CHUNK_SIZE = int(os.getenv("QUOTE_POLL_CHUNK_SIZE", "50"))
+
 # Phase 1: Memory system
 SUMMARY_INTERVAL = int(os.getenv("SUMMARY_INTERVAL", "10"))
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", str(Path(__file__).resolve().parent.parent / "chroma_db"))

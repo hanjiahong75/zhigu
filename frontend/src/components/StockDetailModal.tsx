@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef } from "react";
-import { Modal, Descriptions, Tag, Typography, Button, message, Spin, Row, Col, Statistic } from "antd";
+import { Modal, Descriptions, Tag, Typography, Button, message, Skeleton, Row, Col, Statistic } from "antd";
 import { PlusOutlined, CheckOutlined, ArrowUpOutlined, ArrowDownOutlined, RobotOutlined } from "@ant-design/icons";
 import { getStockQuote, getKlineData, getIndicators, addToWatchlist, getWatchlist, removeFromWatchlist } from "../api/client";
 import { useTheme } from "../api/ThemeContext";
@@ -25,7 +25,7 @@ export default function StockDetailModal({ open, stockCode, stockName, market, o
   const [klt, setKlt] = useState("101");
   const [indicators, setIndicators] = useState<any>(null);
   const [inWatchlist, setInWatchlist] = useState(false);
-  const [fetchDays, setFetchDays] = useState(500);
+  const [fetchDays, setFetchDays] = useState(300);
   const loadingMore = useRef(false);
   const { isDark } = useTheme();
 
@@ -54,7 +54,7 @@ export default function StockDetailModal({ open, stockCode, stockName, market, o
   const handleLoadMore = async () => {
     if (loadingMore.current) return;
     loadingMore.current = true;
-    const newDays = fetchDays + 500;
+    const newDays = fetchDays + 300;
     setFetchDays(newDays);
     try {
       const [k, ind] = await Promise.all([
@@ -108,10 +108,7 @@ export default function StockDetailModal({ open, stockCode, stockName, market, o
       styles={{ body: { padding: "24px", background: "var(--bg-primary)" } }}
     >
       {loading ? (
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <Spin size="large" />
-          <div style={{ marginTop: 12, color: "var(--text-muted)" }}>加载中...</div>
-        </div>
+        <Skeleton active paragraph={{ rows: 6 }} />
       ) : error ? (
         <div style={{ textAlign: "center", padding: 40, color: "#ef4444" }}>{error}</div>
       ) : quote ? (

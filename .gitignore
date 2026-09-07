@@ -26,6 +26,10 @@ concepts.db
 # Node
 node_modules/
 frontend/dist/
+.vite/
+
+# Dependency lockfiles for subprojects (root lockfile keeps deps)
+miniprogram/package-lock.json
 
 # Logs
 backend/logs/

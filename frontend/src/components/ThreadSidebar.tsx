@@ -40,8 +40,7 @@ export default function ThreadSidebar() {
       }}
     >
       {t.pinned && <PushpinFilled style={{ color: "var(--bubble-user-text)", fontSize: 10, flexShrink: 0 }} />}
-      {!collapsed && (
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 12, fontWeight: t.id === threadId ? 600 : 400,
             color: "var(--text-primary)",
@@ -56,43 +55,45 @@ export default function ThreadSidebar() {
             {t.last_message?.slice(0, 30)}
           </div>
         </div>
-      )}
     </div>
   );
 
   return (
     <>
       {/* Sidebar */}
-      <div className="glass-panel" style={{
-        width: collapsed ? 44 : 180, borderRight: "1px solid var(--border-color)",
-        background: "transparent", display: "flex", flexDirection: "column",
-        overflow: "hidden", flexShrink: 0, transition: "width 0.2s ease",
+      <button
+        className={"thread-toggle" + (collapsed ? "" : " hide")}
+        onClick={() => setCollapsed(false)}
+        title="展开对话记录"
+      >
+        <MenuUnfoldOutlined />
+      </button>
+      <div className={"glass-panel thread-sidebar" + (collapsed ? " collapsed" : "")} style={{
+        width: collapsed ? 0 : 180, borderRight: "1px solid var(--border-color)",
+        display: "flex", flexDirection: "column",
+        overflow: "hidden", flexShrink: 0,
       }}>
         {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "8px", borderBottom: "1px solid var(--border-color)",
         }}>
-          {!collapsed && (
-            <Text strong style={{ fontSize: 13, color: "var(--text-primary)" }}>对话记录</Text>
-          )}
+          <Text strong style={{ fontSize: 13, color: "var(--text-primary)" }}>对话记录</Text>
           <Button
             type="text"
             size="small"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            icon={<MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
           />
         </div>
 
-        {!collapsed && (
-          <div style={{ padding: "8px", borderBottom: "1px solid var(--border-color)" }}>
-            <Button type="primary" size="small" block icon={<PlusOutlined />} onClick={newThread}>
-              新建对话
-            </Button>
-          </div>
-        )}
+        <div style={{ padding: "8px", borderBottom: "1px solid var(--border-color)" }}>
+          <Button type="primary" size="small" block icon={<PlusOutlined />} onClick={newThread}>
+            新建对话
+          </Button>
+        </div>
 
-        {/* Thread list */}
+        {/* Thread list — hidden entirely when collapsed */}
         <div style={{ flex: 1, overflow: "auto", padding: "4px" }}>
           {pinnedThreads.map(renderThread)}
           {pinnedThreads.length > 0 && unpinnedThreads.length > 0 && (
@@ -100,7 +101,7 @@ export default function ThreadSidebar() {
               borderTop: "1px solid var(--border-color)", margin: "4px 0",
               fontSize: 10, color: "var(--text-muted)", padding: "2px 8px",
             }}>
-              {!collapsed && "常规对话"}
+              常规对话
             </div>
           )}
           {unpinnedThreads.map(renderThread)}

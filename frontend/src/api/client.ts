@@ -51,7 +51,8 @@ export async function getStockQuote(code: string, market = "sz") {
 }
 
 export async function getKlineData(code: string, market = "sz", days = 300, klt = "101") {
-  const base = isGlobalMarket(market) ? "/global/kline" : "/kline";
+  const isIdx = code.includes(".");  // index codes like "100.NDX" -> use /kline (has index data)
+  const base = (isGlobalMarket(market) && !isIdx) ? "/global/kline" : "/kline";
   return cached(`kl:${code}:${market}:${days}:${klt}`, 60, async () => {
     const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
     return resp.json();
@@ -59,7 +60,8 @@ export async function getKlineData(code: string, market = "sz", days = 300, klt 
 }
 
 export async function getIndicators(code: string, market = "sz", days = 300, klt = "101") {
-  const base = isGlobalMarket(market) ? "/global/indicators" : "/indicators";
+  const isIdx = code.includes(".");
+  const base = (isGlobalMarket(market) && !isIdx) ? "/global/indicators" : "/indicators";
   return cached(`ind:${code}:${market}:${days}:${klt}`, 60, async () => {
     const resp = await fetch(`${API_BASE}${base}?code=${encodeURIComponent(code)}&market=${market}&days=${days}&klt=${klt}`);
     if (!resp.ok) throw new Error("Indicators not available");

@@ -1,11 +1,12 @@
 ﻿import { useState, useEffect } from "react";
+import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { ConfigProvider, theme, Layout, Typography, Badge, App as AntApp, Button, Dropdown } from "antd";
+import { ConfigProvider, theme, Layout, Typography, Badge, App as AntApp, Button, Dropdown, Popover, Segmented, Switch } from "antd";
 import { UserOutlined, SettingOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import MarketBar from "./components/MarketBar";
-import BottomNav from "./components/BottomNav";
+import ModuleNav from "./components/ModuleNav";
 import StockDetailModal from "./components/StockDetailModal";
 import StockSearch from "./components/StockSearch";
 import LoginPage from "./pages/LoginPage";
@@ -27,6 +28,18 @@ import "./animations.css";
 const { Header, Content } = Layout;
 const { Title } = Typography;
 const ALERT_THRESHOLD = 3;
+const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+const ALERT_ESCALATE_PP = 3;
+const ALERT_MAX = 50;
+const INDEX_CODES = new Set(["000001", "000300", "000016", "000688", "399001", "399006"]);
+
+interface AlertItem {
+  code: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  ts: number;
+}
 
 /* Pages that show the shared search bar */
 const SEARCH_PAGES = ["/news", "/market", "/watchlist", "/funds", "/holdings"];
@@ -37,7 +50,11 @@ function AppLayout() {
   const { setInput, searchRefresh } = useChat();
   const navigate = useNavigate();
   const location = useLocation();
-  const [alerts, setAlerts] = useState<string[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertThreshold, setAlertThreshold] = useState<number>(() => Number(localStorage.getItem("zhigu_alert_threshold")) || ALERT_THRESHOLD);
+  const [includeIndex, setIncludeIndex] = useState<boolean>(() => localStorage.getItem("zhigu_alert_index") === "1");
+  const lastReportRef = useRef<Map<string, { abs: number; up: boolean; ts: number }>>(new Map());
   const [detailStock, setDetailStock] = useState<{ code: string; name: string; market: string } | null>(null);
 
   const showSearch = SEARCH_PAGES.some((p) => location.pathname.startsWith(p));
@@ -48,26 +65,30 @@ function AppLayout() {
         const items = await getWatchlist();
         if (items.length === 0) return;
         const quotes = await getWatchlistQuotes(items.map((i: { code: string }) => i.code));
-        const newAlerts: string[] = [];
+        const now = Date.now();
+        const added: AlertItem[] = [];
         quotes.forEach((q: StockQuote) => {
-          if (Math.abs(q.change_pct) >= ALERT_THRESHOLD) {
-            const dir = q.change_pct > 0 ? "涨" : "跌";
-            newAlerts.push(`${q.name}(${q.code}) ${dir}${Math.abs(q.change_pct)}%`);
-          }
+          const code = q.code;
+          const isIndex = INDEX_CODES.has(code) || code.includes(".");
+          if (isIndex && !includeIndex) return;
+          const abs = Math.abs(q.change_pct || 0);
+          if (abs < alertThreshold) return;
+          const prev = lastReportRef.current.get(code);
+          const up = (q.change_pct || 0) > 0;
+          const escalated = !!prev && abs - prev.abs >= ALERT_ESCALATE_PP;
+          const reversed = !!prev && up !== prev.up;
+          const cooled = !!prev && (now - prev.ts < ALERT_COOLDOWN_MS) && !escalated && !reversed;
+          if (cooled) return;
+          lastReportRef.current.set(code, { abs, up, ts: now });
+          added.push({ code, name: q.name, price: q.price || 0, change_pct: q.change_pct || 0, ts: now });
         });
-        if (newAlerts.length > 0) setAlerts(newAlerts);
+        if (added.length > 0) setAlerts((prevList) => [...added, ...prevList].slice(0, ALERT_MAX));
       } catch { /* silent */ }
     };
     poll();
     const timer = setInterval(poll, 30000);
     return () => clearInterval(timer);
-  }, [searchRefresh]);
-
-  useEffect(() => {
-    if (alerts.length === 0) return;
-    const t = setTimeout(() => setAlerts([]), 10000);
-    return () => clearTimeout(t);
-  }, [alerts]);
+  }, [searchRefresh, alertThreshold, includeIndex]);
 
   const userMenuItems = [
     { key: "settings", icon: <SettingOutlined />, label: "设置" },
@@ -94,6 +115,66 @@ function AppLayout() {
     setDetailStock({ code, name, market: mkt });
   };
 
+  const openAlertStock = (a: AlertItem) => {
+    const market = a.code.includes(".") ? "us" : (a.code.startsWith("6") || a.code.startsWith("9") ? "sh" : "sz");
+    setDetailStock({ code: a.code, name: a.name, market });
+    setAlertOpen(false);
+  };
+
+  const changeAlertThreshold = (v: number | string) => {
+    setAlertThreshold(Number(v));
+    localStorage.setItem("zhigu_alert_threshold", String(v));
+  };
+
+  const changeIncludeIndex = (v: boolean) => {
+    setIncludeIndex(v);
+    localStorage.setItem("zhigu_alert_index", v ? "1" : "0");
+  };
+
+  const alertContent = (
+    <div style={{ width: 340 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>异动详情</span>
+        <Segmented
+          size="small"
+          value={alertThreshold}
+          onChange={changeAlertThreshold}
+          options={[{ label: "3%", value: 3 }, { label: "5%", value: 5 }, { label: "8%", value: 8 }]}
+        />
+      </div>
+      <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+        <Switch size="small" checked={includeIndex} onChange={changeIncludeIndex} />
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>含指数（上证/恒生等）</span>
+      </div>
+      {alerts.length === 0 ? (
+        <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "8px 0" }}>暂无预警</div>
+      ) : (
+        <div style={{ maxHeight: 260, overflow: "auto" }}>
+          {alerts.map((a, i) => (
+            <div
+              key={i}
+              onClick={() => openAlertStock(a)}
+              style={{
+                padding: "8px 6px", borderBottom: "1px solid var(--border-color)", cursor: "pointer",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{a.name} <span style={{ color: "var(--text-muted)" }}>{a.code}</span></span>
+              <span style={{ fontSize: 12, color: a.change_pct >= 0 ? "#ef4444" : "#22c55e" }}>
+                {a.change_pct >= 0 ? "+" : ""}{a.change_pct.toFixed(2)}% · {a.price.toFixed(2)} ·{" "}
+                {new Date(a.ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>共 {alerts.length} 条 · 同股30分钟冷却</span>
+        <Button size="small" type="text" onClick={() => setAlerts([])}>清空</Button>
+      </div>
+    </div>
+  );
+
 
   return (
     <Layout style={{ height: "100vh", overflow: "hidden", background: "var(--bg-primary)" }}>
@@ -105,10 +186,11 @@ function AppLayout() {
         <span style={{ marginLeft: 8, color: "var(--text-muted)", fontSize: 13 }}>AI投研助手</span>
         <div style={{ flex: 1 }} />
         {alerts.length > 0 && (
-          <Badge count={alerts.length} size="small" style={{ marginRight: 16 }}>
-            <span style={{ color: "#ef4444", fontSize: 12, cursor: "pointer" }}
-              title={alerts.join("\n")}>异动预警</span>
-          </Badge>
+          <Popover content={alertContent} trigger="click" open={alertOpen} onOpenChange={setAlertOpen} placement="bottomRight">
+            <Badge count={alerts.length} size="small" style={{ marginRight: 16 }}>
+              <span style={{ color: "#ef4444", fontSize: 12, cursor: "pointer" }}>异动预警</span>
+            </Badge>
+          </Popover>
         )}
         <MarketBar />
         <div style={{ width: 8 }} />
@@ -125,6 +207,8 @@ function AppLayout() {
           <div className="auth-blob auth-blob-2" />
           <div className="auth-blob auth-blob-3" />
         </div>
+        {/* Left module navigation */}
+        <ModuleNav />
         {/* Content area */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", position: "relative", zIndex: 1 }}>
           {/* Top bar: shared search (all pages except holdings) */}
@@ -156,8 +240,6 @@ function AppLayout() {
             </Routes>
           </div>
 
-          {/* Bottom nav */}
-          <BottomNav />
           <StockDetailModal
             open={!!detailStock}
             stockCode={detailStock?.code || ""}

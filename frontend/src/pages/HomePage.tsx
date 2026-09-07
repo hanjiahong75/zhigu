@@ -20,8 +20,15 @@ export default function HomePage() {
     "帮我看一下 300308 的买卖信号",
   ];
 
+  const fmtTime = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+
   return (
-    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
       {/* Left: Thread sidebar */}
       <ThreadSidebar />
 
@@ -87,6 +94,12 @@ export default function HomePage() {
                   {msg.role === "assistant"
                     ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
                     : <Text style={{ color: "var(--bubble-user-text)" }}>{msg.content}</Text>}
+                </div>
+                <div style={{
+                  fontSize: 10, color: "var(--text-muted)", marginTop: 2,
+                  textAlign: msg.role === "user" ? "right" : "left",
+                }}>
+                  {fmtTime(msg.created_at)}
                 </div>
                 {msg.role === "assistant" && msg.stock_data?.kline && msg.stock_data?.quote && (
                   <ChatStockCard

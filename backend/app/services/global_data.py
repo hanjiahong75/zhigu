@@ -70,6 +70,46 @@ def get_global_quote(code: str, market: str) -> dict | None:
     """
     # Handle global index codes (100.XXX format)
     if "." in code or code.startswith("100."):
+        # Primary source = the same overview (EastMoney) used by the index cards,
+        # so price/change stay consistent. The overview lacks OHLC, so fill those
+        # from the SAME source's index kline (last bar) — no source swap, no flat card.
+        try:
+            from ..services.stock_data import get_global_indices as _gi, get_kline_data as _kd
+            for group in _gi():
+                for idx in group.get("indices", []):
+                    if idx["code"] == code:
+                        p = idx["price"]
+                        cp = idx["change_pct"]
+                        mkt = idx.get("market", market)
+                        open_ = high = low = pre_close = p
+                        try:
+                            bars = _kd(code, mkt, 5, "101")
+                            if bars:
+                                last = bars[-1]
+                                open_ = last.get("open", p)
+                                high = last.get("high", p)
+                                low = last.get("low", p)
+                                pre_close = bars[-2].get("close", p) if len(bars) > 1 else last.get("close", p)
+                            else:
+                                # Primary (EastMoney) kline unavailable -> fill OHLC from another source.
+                                from ..services.stock_data import get_realtime_quote as _rq
+                                real = _rq(code, mkt)
+                                if real:
+                                    open_ = real.get("open", p)
+                                    high = real.get("high", p)
+                                    low = real.get("low", p)
+                                    pre_close = real.get("pre_close", p)
+                        except Exception:
+                            pass
+                        return {
+                            "code": code, "market": mkt, "name": idx["name"],
+                            "price": p, "change_pct": cp,
+                            "change_amount": round(p * cp / 100, 2) if cp else 0,
+                            "open": open_, "high": high, "low": low, "pre_close": pre_close,
+                            "volume": 0, "amount": 0, "turnover": 0, "source": "global",
+                        }
+        except Exception:
+            pass
         try:
             from ..services.stock_data import get_global_indices as _gi
             cached = _gi()
@@ -78,11 +118,12 @@ def get_global_quote(code: str, market: str) -> dict | None:
                     if idx["code"] == code:
                         p = idx["price"]
                         cp = idx["change_pct"]
+                        pre_close = round(p / (1 + cp / 100), 2) if cp not in (0, None) else p
                         return {
                             "code": code, "market": idx.get("market", market),
                             "name": idx["name"], "price": p,
                             "change_pct": cp, "change_amount": round(p * cp / 100, 2) if cp else 0,
-                            "open": p, "high": p, "low": p, "pre_close": p,
+                            "open": p, "high": p, "low": p, "pre_close": pre_close,
                             "volume": 0, "amount": 0, "turnover": 0, "source": "cache",
                         }
         except Exception:

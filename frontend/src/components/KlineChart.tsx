@@ -62,8 +62,10 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
   const candleSeriesRef = useRef<any>(null);
   const volumeSeriesRef = useRef<any>(null);
   const prevDataRef = useRef<KlineItem[]>([]);
+  const dataLenRef = useRef(0);
   const onLoadMoreRef = useRef(onLoadMore);
   onLoadMoreRef.current = onLoadMore;
+  dataLenRef.current = data.length;
   const [vis, setVis] = useState<Visibility>({ ma: true, boll: true, volume: true, macd: true, rsi: true });
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [intraday, setIntraday] = useState<IntradayState | null>(null);
@@ -150,8 +152,10 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
         borderColor: "#e8e8e8",
         timeVisible: isIntraday(klt),
         barSpacing: isIntraday(klt) ? 3 : undefined,
+        rightOffset: 0,
       },
-      rightPriceScale: { borderColor: "#e8e8e8" },
+      leftPriceScale: { visible: true, borderColor: "#e8e8e8" },
+      rightPriceScale: { visible: false },
     });
 
     mainChart.subscribeClick(handleClick);
@@ -160,6 +164,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       upColor: "#ef4444", downColor: "#22c55e",
       borderDownColor: "#22c55e", borderUpColor: "#ef4444",
       wickDownColor: "#22c55e", wickUpColor: "#ef4444",
+      priceScaleId: "left",
     });
     candleSeries.setData(data.map((d: KlineItem) => ({
       time: toTime(d.date),
@@ -169,6 +174,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     if (vis.volume) {
       const volSeries = mainChart.addHistogramSeries({
         color: "#d1d5db", priceFormat: { type: "volume" }, priceScaleId: "volume",
+        lastValueVisible: false, priceLineVisible: false,
       });
       mainChart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
       volSeries.setData(data.map((d: KlineItem) => ({
@@ -181,7 +187,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       (["ma5","ma10","ma20","ma60"] as const).forEach((key, idx) => {
         const vals = indicators.ma[key]; if (!vals) return;
         const ld = data.map((d: KlineItem, i: number) => vals[i] != null ? { time: toTime(d.date), value: vals[i]! } : null).filter(Boolean) as any[];
-        if (ld.length > 0) { const s = mainChart.addLineSeries({ color: MA_COLORS[idx], lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); s.setData(ld); }
+        if (ld.length > 0) { const s = mainChart.addLineSeries({ color: MA_COLORS[idx], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(ld); }
       });
     }
 
@@ -190,7 +196,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       [upper, mid, lower].forEach((vals, idx) => {
         const colors = [BOLL_COLORS.upper, BOLL_COLORS.mid, BOLL_COLORS.lower];
         const ld = data.map((d: KlineItem, i: number) => vals[i] != null ? { time: toTime(d.date), value: vals[i]! } : null).filter(Boolean) as any[];
-        if (ld.length > 0) { const s = mainChart.addLineSeries({ color: colors[idx], lineWidth: 1, lineStyle: idx === 1 ? LineStyle.Solid : LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }); s.setData(ld); }
+        if (ld.length > 0) { const s = mainChart.addLineSeries({ color: colors[idx], lineWidth: 1, lineStyle: idx === 1 ? LineStyle.Solid : LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(ld); }
       });
     }
 
@@ -205,16 +211,17 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
         grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
         crosshair: { mode: CrosshairMode.Normal },
         timeScale: { borderColor: "#e8e8e8", visible: false },
-        rightPriceScale: { borderColor: "#e8e8e8" },
+        leftPriceScale: { visible: true, borderColor: "#e8e8e8" },
+        rightPriceScale: { visible: false },
       });
       if (indicators?.macd) {
         const { dif, dea, macd } = indicators.macd;
-        const d1 = data.map((d: KlineItem, i: number) => dif[i] != null ? { time: toTime(d.date), value: dif[i]! } : null).filter(Boolean) as any[];
-        const d2 = data.map((d: KlineItem, i: number) => dea[i] != null ? { time: toTime(d.date), value: dea[i]! } : null).filter(Boolean) as any[];
-        const d3 = data.map((d: KlineItem, i: number) => macd[i] != null ? { time: toTime(d.date), value: macd[i]!, color: macd[i]! >= 0 ? MACD_COLORS.up : MACD_COLORS.down } : null).filter(Boolean) as any[];
-        if (d1.length) { const s = macdChart.addLineSeries({ color: MACD_COLORS.dif, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); s.setData(d1); }
-        if (d2.length) { const s = macdChart.addLineSeries({ color: MACD_COLORS.dea, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); s.setData(d2); }
-        if (d3.length) { const s = macdChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false }); s.setData(d3); }
+        const d1 = data.map((d: KlineItem, i: number) => ({ time: toTime(d.date), ...(dif[i] != null ? { value: dif[i]! } : {}) })) as any[];
+        const d2 = data.map((d: KlineItem, i: number) => ({ time: toTime(d.date), ...(dea[i] != null ? { value: dea[i]! } : {}) })) as any[];
+        const d3 = data.map((d: KlineItem, i: number) => ({ time: toTime(d.date), ...(macd[i] != null ? { value: macd[i]!, color: macd[i]! >= 0 ? MACD_COLORS.up : MACD_COLORS.down } : {}) })) as any[];
+        if (d1.length) { const s = macdChart.addLineSeries({ color: MACD_COLORS.dif, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(d1); }
+        if (d2.length) { const s = macdChart.addLineSeries({ color: MACD_COLORS.dea, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(d2); }
+        if (d3.length) { const s = macdChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(d3); }
       }
       chartsRef.current.push(macdChart);
     }
@@ -227,16 +234,17 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
         grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
         crosshair: { mode: CrosshairMode.Normal },
         timeScale: { borderColor: "#e8e8e8", timeVisible: true },
-        rightPriceScale: { borderColor: "#e8e8e8" },
+        leftPriceScale: { visible: true, borderColor: "#e8e8e8" },
+        rightPriceScale: { visible: false },
       });
       if (indicators?.rsi) {
         (["rsi6","rsi14","rsi24"] as const).forEach((key, idx) => {
           const vals = indicators.rsi[key]; if (!vals) return;
-          const ld = data.map((d: KlineItem, i: number) => vals[i] != null ? { time: toTime(d.date), value: vals[i]! } : null).filter(Boolean) as any[];
-          if (ld.length > 0) { const s = rsiChart!.addLineSeries({ color: RSI_COLORS[idx], lineWidth: 1, priceLineVisible: false, lastValueVisible: false }); s.setData(ld); }
+          const ld = data.map((d: KlineItem, i: number) => ({ time: toTime(d.date), ...(vals[i] != null ? { value: vals[i]! } : {}) })) as any[];
+          if (ld.length > 0) { const s = rsiChart!.addLineSeries({ color: RSI_COLORS[idx], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" }); s.setData(ld); }
         });
         [70,30].forEach((level) => {
-          const s = rsiChart!.addLineSeries({ color: "#ddd", lineWidth: 1, lineStyle: LineStyle.Dotted, priceLineVisible: false, lastValueVisible: false });
+          const s = rsiChart!.addLineSeries({ color: "#ddd", lineWidth: 1, lineStyle: LineStyle.Dotted, priceLineVisible: false, lastValueVisible: false, priceScaleId: "left" });
           s.setData(data.map((d: KlineItem) => ({ time: toTime(d.date), value: level })));
         });
       }
@@ -244,8 +252,23 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     }
 
     const subCharts = [macdChart, rsiChart].filter(Boolean) as ReturnType<typeof createChart>[];
-    mainChart.timeScale().subscribeVisibleTimeRangeChange((range: any) => {
-      if (range) subCharts.forEach((c) => c.timeScale().setVisibleRange(range));
+    // Sync sub-charts by logical (bar-index) range so they align with the main K-line,
+    // and clamp so the user can't drag past the newest bar into empty space.
+    const maxIndex = Math.max(0, dataLenRef.current - 1);
+    let lastRangeRef = { from: Math.max(0, maxIndex - 40), to: maxIndex };
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange((range: any) => {
+      if (!range || !subCharts.length) return;
+      const from = range.from;
+      const to = range.to;
+      const atRightEdge = typeof to === "number" && to > maxIndex + 0.001;
+      const atLeftEdge = typeof from === "number" && from < -0.001;
+      if (atRightEdge || atLeftEdge) {
+        // At either edge: revert to the last valid range (no zoom, no drift).
+        mainChart.timeScale().setVisibleLogicalRange(lastRangeRef);
+        return;
+      }
+      lastRangeRef = { from, to };
+      subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(range));
     });
 
     // Detect scroll to far left for loading earlier data
@@ -262,8 +285,8 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
     });
     // Show only last 50 bars by default, user can scroll left for more
     const totalBars = data.length;
-    if (totalBars > 50) {
-      mainChart.timeScale().setVisibleLogicalRange({ from: totalBars - 50, to: totalBars - 1 });
+    if (totalBars > 40) {
+      mainChart.timeScale().setVisibleLogicalRange({ from: totalBars - 40, to: totalBars - 1 });
     } else {
       mainChart.timeScale().fitContent();
     }
@@ -283,7 +306,7 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       chartsRef.current.forEach((c) => c.remove());
       chartsRef.current = [];
     };
-  }, [data.length === 0 ? 'empty' : klt, vis, isDark]);  // Only recreate on klt/vis/dark change, NOT on data change
+  }, [data.length === 0 ? 'empty' : klt, vis, isDark, showIntraday]);  // recreate on klt/vis/dark/intraday toggle, NOT on data change
 
   // Update chart data in-place when data prop changes (loadMore)
   useEffect(() => {
@@ -366,8 +389,32 @@ export default function KlineChart({ data, stockName, stockCode, indicators, klt
       ) : (
         <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #f0f0f0", position: "relative" }}>
           <div ref={mainRef} style={{ minHeight: mainH }} />
-          <div ref={macdRef} style={{ height: vis.macd ? subH : 0, overflow: "hidden" }} />
-          <div ref={rsiRef} style={{ height: vis.rsi ? subH : 0, overflow: "hidden" }} />
+          <div style={{ position: "relative" }}>
+            <div ref={macdRef} style={{ height: vis.macd ? subH : 0, overflow: "hidden" }} />
+            {vis.macd && (
+              <div className="pane-label">
+                <span className="pane-label-title">MACD</span>
+                <span className="pane-label-dot" style={{ background: MACD_COLORS.dif }} />
+                <span>DIF</span>
+                <span className="pane-label-dot" style={{ background: MACD_COLORS.dea }} />
+                <span>DEA</span>
+              </div>
+            )}
+          </div>
+          <div style={{ position: "relative" }}>
+            <div ref={rsiRef} style={{ height: vis.rsi ? subH : 0, overflow: "hidden" }} />
+            {vis.rsi && (
+              <div className="pane-label">
+                <span className="pane-label-title">RSI</span>
+                {["6", "14", "24"].map((p, i) => (
+                  <span key={p} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    <span className="pane-label-dot" style={{ background: RSI_COLORS[i] }} />
+                    <span>{p}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -443,7 +490,8 @@ function IntradayLineChart({ bars, prevClose, isDark }: { bars: IntradayBar[]; p
       grid: { vertLines: { visible: false }, horzLines: { color: "#f0f0f0" } },
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: { borderColor: "#e8e8e8", timeVisible: true, barSpacing: bars.length > 50 ? 2 : 4 },
-      rightPriceScale: { borderColor: "#e8e8e8" },
+      leftPriceScale: { visible: true, borderColor: "#e8e8e8" },
+      rightPriceScale: { visible: true, borderColor: "#e8e8e8" },
     });
 
     // Convert "YYYY-MM-DD HH:MM" string to Unix timestamp (seconds) for lightweight-charts intraday
@@ -454,30 +502,64 @@ function IntradayLineChart({ bars, prevClose, isDark }: { bars: IntradayBar[]; p
       return Date.UTC(y, m - 1, d, hh, mm, 0) / 1000;
     };
     const priceData = bars.map((b: IntradayBar) => ({ time: toTimestamp(b.time) as Time, value: b.price }));
+    const refPrice = prevClose > 0 ? prevClose : (bars[0]?.price || 0);
+
+    // Symmetric range around prevClose so both axes center on 0% / 昨收.
+    let lo = Infinity;
+    let hi = -Infinity;
+    bars.forEach((b) => { lo = Math.min(lo, b.price); hi = Math.max(hi, b.price); });
+    if (refPrice > 0) {
+      let dev = Math.max(Math.abs(hi - refPrice), Math.abs(refPrice - lo));
+      if (dev <= 0) dev = hi - lo || 1;
+      lo = refPrice - dev;
+      hi = refPrice + dev;
+    } else {
+      lo = lo === Infinity ? 0 : lo;
+      hi = hi === -Infinity ? 1 : hi;
+    }
+    const autoscale = () => ({ priceRange: { minValue: lo, maxValue: hi } });
+
     const areaSeries = chart.addAreaSeries({
       lineColor: "#1677ff", topColor: "rgba(22,119,255,0.2)", bottomColor: "rgba(22,119,255,0.02)",
       lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+      priceScaleId: "left", autoscaleInfoProvider: autoscale,
     });
     areaSeries.setData(priceData);
 
-    if (prevClose > 0) {
+    if (refPrice > 0) {
       const refLine = chart.addLineSeries({
         color: "#ffa726", lineWidth: 1, lineStyle: LineStyle.Dashed,
-        priceLineVisible: false, lastValueVisible: false,
+        priceLineVisible: false, lastValueVisible: false, priceScaleId: "left",
       });
       refLine.setData([
-        { time: toTimestamp(bars[0].time) as Time, value: prevClose },
-        { time: toTimestamp(bars[bars.length - 1].time) as Time, value: prevClose },
+        { time: toTimestamp(bars[0].time) as Time, value: refPrice },
+        { time: toTimestamp(bars[bars.length - 1].time) as Time, value: refPrice },
       ]);
+    }
+
+    // Right axis: percentage vs prevClose (transparent companion series).
+    if (refPrice > 0) {
+      const pctFormatter = (price: number) => {
+        const pct = ((price - refPrice) / refPrice) * 100;
+        return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+      };
+      const pctSeries = chart.addLineSeries({
+        color: "transparent", lineWidth: 1, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: false,
+        priceScaleId: "right", autoscaleInfoProvider: autoscale,
+        priceFormat: { type: "custom", formatter: pctFormatter, minMove: 0.01 },
+      });
+      pctSeries.setData(priceData);
     }
 
     const volSeries = chart.addHistogramSeries({
       color: "rgba(22,119,255,0.12)", priceFormat: { type: "volume" }, priceScaleId: "vol",
+      lastValueVisible: false, priceLineVisible: false,
     });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.9, bottom: 0 } });
     volSeries.setData(bars.map((b: IntradayBar) => ({
       time: toTimestamp(b.time) as Time, value: b.volume,
-      color: b.price >= (prevClose || 0) ? "rgba(239,68,68,0.2)" : "rgba(34,197,94,0.2)",
+      color: b.price >= refPrice ? "rgba(239,68,68,0.2)" : "rgba(34,197,94,0.2)",
     })));
 
     chart.timeScale().fitContent();

@@ -187,9 +187,9 @@ export default function LiveMarketPanel() {
   }
 
   return (
-    <div style={{
+    <div className="glass-panel" style={{
       width: 300, flexShrink: 0, borderLeft: "1px solid var(--border-color)",
-      background: "var(--bg-secondary)", display: "flex", flexDirection: "column", overflow: "hidden",
+      display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
       <div style={{
         padding: "10px 12px", borderBottom: "1px solid var(--border-color)",

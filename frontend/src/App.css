@@ -365,7 +365,7 @@ body {
 .thread-toggle {
   position: absolute;
   top: 12px;
-  left: 12px;
+  left: 12px; /* top-left of the chat/content area */
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -389,12 +389,9 @@ body {
   transform: scale(0.5);
   pointer-events: none;
 }
-/* Animated thread-sidebar (width 0 <-> 180, non-linear easing) */
+/* Animated thread-sidebar (width 0 <-> 180, synced with the liquid morph) */
 .thread-sidebar {
-  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
-}
-.thread-sidebar.collapsed {
-  opacity: 0;
+  transition: width 0.62s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .glass-chip {

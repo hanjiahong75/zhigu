@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { List, Tag, Typography, Popconfirm, message } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
-import { getWatchlist, getWatchlistQuotes, removeFromWatchlist } from "../api/client";
+import { getWatchlist, getWatchlistQuotes, removeFromWatchlist, subscribeWatchlist } from "../api/client";
 import { useQuoteStream } from "../api/useQuoteStream";
 import type { WatchlistItem, StockQuote } from "../types";
 
@@ -37,13 +37,14 @@ export default function WatchlistPage({ onSelectStock }: Props) {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => subscribeWatchlist(load), []);
   useEffect(() => {
     const timer = setInterval(load, 30000);
     return () => clearInterval(timer);
   }, []);
 
   const handleRemove = async (code: string) => {
-    try { await removeFromWatchlist(code); message.success("已移除"); load(); } catch { message.error("移除失败"); }
+    try { await removeFromWatchlist(code); message.success("已移除"); } catch { message.error("移除失败"); }
   };
 
   const getQuote = (code: string) => quotes.find((q) => q.code === code);

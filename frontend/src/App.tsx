@@ -7,6 +7,7 @@ import { UserOutlined, SettingOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import MarketBar from "./components/MarketBar";
 import ModuleNav from "./components/ModuleNav";
+import BottomNav from "./components/BottomNav";
 import StockDetailModal from "./components/StockDetailModal";
 import StockSearch from "./components/StockSearch";
 import LoginPage from "./pages/LoginPage";
@@ -23,6 +24,7 @@ import { ThemeProvider, useTheme } from "./api/ThemeContext";
 import { ChatProvider, useChat } from "./api/ChatContext";
 import type { StockQuote } from "./types";
 import { getWatchlist, getWatchlistQuotes } from "./api/client";
+import { useIsMobile } from "./hooks/useIsMobile";
 import "./animations.css";
 
 const { Header, Content } = Layout;
@@ -56,6 +58,7 @@ function AppLayout() {
   const [includeIndex, setIncludeIndex] = useState<boolean>(() => localStorage.getItem("zhigu_alert_index") === "1");
   const lastReportRef = useRef<Map<string, { abs: number; up: boolean; ts: number }>>(new Map());
   const [detailStock, setDetailStock] = useState<{ code: string; name: string; market: string } | null>(null);
+  const isMobile = useIsMobile();
 
   const showSearch = SEARCH_PAGES.some((p) => location.pathname.startsWith(p));
 
@@ -192,7 +195,8 @@ function AppLayout() {
             </Badge>
           </Popover>
         )}
-        <MarketBar />
+        {/* Phone: the index strip needs ~700px, so it is hidden below the breakpoint */}
+        {!isMobile && <MarketBar />}
         <div style={{ width: 8 }} />
         <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenu }} placement="bottomRight">
           <Button type="text" icon={<UserOutlined />} style={{ marginLeft: 8 }}>
@@ -201,24 +205,29 @@ function AppLayout() {
         </Dropdown>
       </Header>
 
-      <Content style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+      <Content style={{
+        flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row",
+        overflow: "hidden", position: "relative",
+      }}>
         <div className="bg-aurora" aria-hidden="true">
           <div className="auth-blob auth-blob-1" />
           <div className="auth-blob auth-blob-2" />
           <div className="auth-blob auth-blob-3" />
         </div>
-        {/* Left module navigation */}
-        <ModuleNav />
+        {/* Module navigation: left rail on desktop, bottom tab bar on phones */}
+        {!isMobile && <ModuleNav />}
         {/* Content area */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", position: "relative", zIndex: 1 }}>
           {/* Top bar: shared search (all pages except holdings) */}
           {showSearch && (
             <div className="glass-nav" style={{
               padding: "10px 24px", flexShrink: 0,
+              // keep the search dropdown above the page content (backdrop-filter
+              // makes this bar its own stacking context)
+              position: "relative", zIndex: 100,
             }}>
               <StockSearch
                 onSelect={handleSearchSelect}
-                onWatchlistChange={() => {}}
               />
             </div>
           )}
@@ -249,6 +258,7 @@ function AppLayout() {
             onAskAI={handleAskAI}
           />
         </div>
+        {isMobile && <BottomNav />}
       </Content>
     </Layout>
   );

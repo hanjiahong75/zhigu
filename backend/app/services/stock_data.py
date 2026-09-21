@@ -14,8 +14,40 @@ def _safe_float(v, default: float = 0.0) -> float:
     except (TypeError, ValueError):
         return default
 
+@memo_ttl(120)
+def _suggest_a_shares(query: str) -> list[dict]:
+    """Tencent suggest API: matches code, name, full pinyin and pinyin initials."""
+    try:
+        r = requests.get("https://smartbox.gtimg.cn/s3/", params={"q": query, "t": "all"}, timeout=8)
+        body = r.content.decode("gbk", "ignore").split('"')[1]
+    except Exception:
+        return []
+    hits = []
+    for entry in body.split("^"):
+        parts = entry.split("~")
+        if len(parts) < 5:
+            continue
+        market, code, name, _pinyin, kind = parts[:5]
+        # A-share equities and SH/SZ indices only; other markets come from global_symbols
+        if market not in ("sh", "sz") or not (kind.startswith("GP-A") or kind == "ZS"):
+            continue
+        if "\\u" in name:  # names arrive as \uXXXX escapes
+            try:
+                name = name.encode("latin-1").decode("unicode_escape")
+            except Exception:
+                pass
+        hits.append({"code": code, "name": name, "market": market})
+    return hits
+
+
 def search_stocks(keyword: str) -> list[dict]:
-    """Search stocks by keyword (name or code)."""
+    """Search A-share stocks by code, name or pinyin (falls back to code/name match)."""
+    keyword = keyword.strip()
+    if not keyword:
+        return []
+    hits = _suggest_a_shares(keyword)
+    if hits:
+        return hits[:20]
     try:
         df = ak.stock_info_a_code_name()
         mask = df["name"].str.contains(keyword, na=False) | df["code"].str.contains(keyword, na=False)

@@ -293,6 +293,7 @@ body {
 .module-nav {
   display: flex;
   flex-direction: column;
+  justify-content: space-evenly;
   padding: 10px 8px;
   gap: 2px;
   overflow-y: auto;
@@ -302,7 +303,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 45px 20px;
   border-radius: 10px;
   cursor: pointer;
   color: var(--text-secondary);
@@ -394,6 +395,28 @@ body {
   transition: width 0.62s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Animated live-market panel (width 0 <-> 300, synced with the liquid morph) */
+.live-panel {
+  transition: width 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Collapsed strip of the live-market panel */
+.live-toggle {
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.62s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+}
+.live-toggle.hide {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .glass-chip {
   background: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.35);
@@ -433,5 +456,63 @@ body {
   .glass-card,
   .ant-card.glass-card {
     background: var(--bg-secondary);
+  }
+}
+
+/* ── Phone layout (< 768px): bottom tab bar + overlay drawers ── */
+
+/* Dimmed layer behind an open drawer; tapping it closes the drawer */
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.45);
+  animation: drawerBackdropIn 0.25s ease both;
+}
+@keyframes drawerBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 767.98px), (max-height: 520px) and (pointer: coarse) {
+  /* Drawers slide instead of morphing (the clip morph stays desktop-only) and use an
+     opaque surface — translucent glass lets the chat text bleed through when overlaying */
+  .thread-sidebar,
+  .live-panel {
+    transition: transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* denser than the default glass (which is overridden by [data-theme="dark"] .glass-panel) */
+  .glass-panel.thread-sidebar,
+  .glass-panel.live-panel {
+    background: var(--bg-secondary);
+  }
+
+  /* Floating trigger for the right drawer, mirrors .thread-toggle */
+  .live-toggle-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 30;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease, background 0.15s ease;
+  }
+  .live-toggle-btn:hover {
+    background: var(--thread-hover-bg);
+  }
+  .live-toggle-btn.hide {
+    opacity: 0;
+    transform: scale(0.5);
+    pointer-events: none;
   }
 }

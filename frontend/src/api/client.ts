@@ -16,6 +16,19 @@ async function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promis
   return data;
 }
 
+/** Watchlist subscribers — notified (and cache dropped) whenever it changes. */
+const watchlistListeners = new Set<() => void>();
+export function subscribeWatchlist(fn: () => void) {
+  watchlistListeners.add(fn);
+  return () => {
+    watchlistListeners.delete(fn);
+  };
+}
+function notifyWatchlistChanged() {
+  memCache.delete("watchlist");
+  watchlistListeners.forEach((fn) => fn());
+}
+
 export const PERIODS: Record<string, string> = {
   "1": "1分", "5": "5分", "15": "15分", "30": "30分", "60": "60分", "120": "120分",
   "101": "日K", "102": "周K", "103": "月K", "104": "季K", "105": "年K",
@@ -106,7 +119,9 @@ export async function addToWatchlist(code: string, name: string, market = "sz") 
     `${API_BASE}/watchlist?code=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&market=${market}`,
     { method: "POST" }
   );
-  return resp.json();
+  const data = await resp.json();
+  notifyWatchlistChanged();
+  return data;
 }
 
 export async function removeFromWatchlist(code: string) {
@@ -114,7 +129,9 @@ export async function removeFromWatchlist(code: string) {
     `${API_BASE}/watchlist?code=${encodeURIComponent(code)}`,
     { method: "DELETE" }
   );
-  return resp.json();
+  const data = await resp.json();
+  notifyWatchlistChanged();
+  return data;
 }
 
 export async function getChatHistory(limit = 50) {

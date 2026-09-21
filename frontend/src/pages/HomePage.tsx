@@ -1,10 +1,12 @@
 ﻿import { Typography, Spin, Input } from "antd";
 import { SendOutlined, RobotOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Tag } from "antd";
+import { useEffect, useState } from "react";
 import ThreadSidebar from "../components/ThreadSidebar";
 import ChatStockCard from "../components/ChatStockCard";
 import LiveMarketPanel from "../components/LiveMarketPanel";
 import { useChat, renderMarkdown } from "../api/ChatContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const { Text } = Typography;
 
@@ -12,6 +14,28 @@ export default function HomePage() {
   const {
     messages, input, setInput, loading, streaming, handleSend, stopGeneration, bottomRef,
   } = useChat();
+  const isMobile = useIsMobile();
+  // Desktop: both panels are inline columns, open by default.
+  // Phone: both are overlay drawers, closed by default (only one may be open).
+  const [threadsOpen, setThreadsOpen] = useState(!isMobile);
+  const [liveOpen, setLiveOpen] = useState(!isMobile);
+
+  useEffect(() => {
+    setThreadsOpen(!isMobile);
+    setLiveOpen(!isMobile);
+  }, [isMobile]);
+
+  const toggleThreads = () => {
+    const next = !threadsOpen;
+    setThreadsOpen(next);
+    if (next && isMobile) setLiveOpen(false);
+  };
+
+  const toggleLive = () => {
+    const next = !liveOpen;
+    setLiveOpen(next);
+    if (next && isMobile) setThreadsOpen(false);
+  };
 
   const suggestions = [
     "茅台现在怎么样？",
@@ -30,7 +54,7 @@ export default function HomePage() {
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
       {/* Left: Thread sidebar */}
-      <ThreadSidebar />
+      <ThreadSidebar collapsed={!threadsOpen} onToggle={toggleThreads} />
 
       {/* Center: Chat conversation */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
@@ -162,7 +186,15 @@ export default function HomePage() {
       </div>
 
       {/* Right: live quotes + signals */}
-      <LiveMarketPanel />
+      <LiveMarketPanel expanded={liveOpen} onToggle={toggleLive} />
+
+      {/* Phone: tap the dimmed area to dismiss whichever drawer is open */}
+      {isMobile && (threadsOpen || liveOpen) && (
+        <div
+          className="drawer-backdrop"
+          onClick={() => { setThreadsOpen(false); setLiveOpen(false); }}
+        />
+      )}
     </div>
   );
 }

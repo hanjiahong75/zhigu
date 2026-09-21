@@ -6,7 +6,7 @@ import type { StockSearchResult } from "../types";
 
 interface Props {
   onSelect: (code: string, name: string, market: string) => void;
-  onWatchlistChange: () => void;
+  onWatchlistChange?: () => void;
   compact?: boolean;
 }
 
@@ -65,7 +65,7 @@ export default function StockSearch({ onSelect, onWatchlistChange, compact }: Pr
     try {
       await addToWatchlist(item.code, item.name, market);
       message.success(`已添加 ${item.name} 到自选`);
-      onWatchlistChange();
+      onWatchlistChange?.();
     } catch {
       message.error("添加失败");
     }
@@ -76,7 +76,7 @@ export default function StockSearch({ onSelect, onWatchlistChange, compact }: Pr
       <Input
         size={compact ? "small" : "large"}
         prefix={<SearchOutlined />}
-        placeholder="输入股票代码或名称，如：贵州茅台、000001..."
+        placeholder="输入代码、名称或拼音，如：600519、贵州茅台、gzmt"
         value={keyword}
         onChange={(e) => handleChange(e.target.value)}
         onFocus={() => results.length > 0 && setShowResults(true)}

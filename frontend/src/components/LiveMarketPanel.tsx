@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Tag, Tooltip, Button, Switch, Select, Input } from "antd";
 import {
   ReloadOutlined, RightOutlined, LeftOutlined, StockOutlined,
@@ -7,10 +7,11 @@ import {
 import {
   getWatchlist, getStockSignal,
   getThreadWatches, addThreadWatch, removeThreadWatch, refreshThreadWatch,
-  type ThreadWatch,
+  subscribeWatchlist, type ThreadWatch,
 } from "../api/client";
 import { useQuoteStream } from "../api/useQuoteStream";
 import { useChat } from "../api/ChatContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 import type { WatchlistItem, StockQuote } from "../types";
 
 interface SignalInfo {
@@ -37,10 +38,38 @@ function ratingTag(rating: string | undefined) {
   return <Tag color={RATING_COLOR[r] || "default"} style={{ margin: 0 }}>{r}</Tag>;
 }
 
+// Liquid-glass morph helpers (panel outline in objectBoundingBox space: 0..1)
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const lp = (a: number, b: number, t: number) => a + (b - a) * t;
+function morphPath(p: number): string {
+  // Unfold anchor is the top-right corner; the bottom/left edge trails behind
+  const A: [number, number] = [1, 0];
+  const TLs: [number, number] = [0, 0];
+  const TRs: [number, number] = [1, 0];
+  const BRs: [number, number] = [1, 1];
+  const BLs: [number, number] = [0, 1];
+  const lag = p * p;
+  const TL: [number, number] = [lp(TLs[0], A[0], p), lp(TLs[1], A[1], p)];
+  const TR: [number, number] = [lp(TRs[0], A[0], p), lp(TRs[1], A[1], p)];
+  const BR: [number, number] = [lp(BRs[0], A[0], p), lp(BRs[1], A[1], p)];
+  const BL: [number, number] = [lp(BLs[0], A[0], lag), lp(BLs[1], A[1], lag)];
+  const c1: [number, number] = [lp(lp(BLs[0], TLs[0], 0.34), A[0], p * 0.9), lp(lp(BLs[1], TLs[1], 0.34), A[1], p * 0.9)];
+  const c2: [number, number] = [lp(lp(BLs[0], TLs[0], 0.66), A[0], p * 0.9), lp(lp(BLs[1], TLs[1], 0.66), A[1], p * 0.9)];
+  return `M ${TL[0]} ${TL[1]} L ${TR[0]} ${TR[1]} L ${BR[0]} ${BR[1]} L ${BL[0]} ${BL[1]} C ${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${TL[0]} ${TL[1]} Z`;
+}
+
+interface Props {
+  /** Desktop: inline column. Phone: overlay drawer. */
+  expanded: boolean;
+  onToggle: () => void;
+}
+
 /** Right sidebar of the chat workbench: thread watch list + watchlist quotes/signals (M4/M5). */
-export default function LiveMarketPanel() {
+export default function LiveMarketPanel({ expanded, onToggle }: Props) {
   const { threadId, messages } = useChat();
-  const [expanded, setExpanded] = useState(true);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const lidRef = useRef<SVGPathElement | null>(null);
+  const isMobile = useIsMobile();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [signals, setSignals] = useState<Record<string, SignalInfo>>({});
   const [loadingSignals, setLoadingSignals] = useState(false);
@@ -57,6 +86,36 @@ export default function LiveMarketPanel() {
   const liveQuotes = useQuoteStream(codes, intervalSec, expanded && codes.length > 0);
   const liveWatchQuotes = useQuoteStream(watchCodes, intervalSec, expanded && auto && watchCodes.length > 0);
 
+  useEffect(() => {
+    const pathEl = lidRef.current;
+    const panel = panelRef.current;
+    if (!pathEl || !panel) return;
+    // Phone: the panel is an overlay drawer — it slides in/out via CSS transform
+    if (isMobile) {
+      pathEl.setAttribute("d", morphPath(0));
+      panel.style.filter = "";
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      pathEl.setAttribute("d", morphPath(expanded ? 0 : 1));
+      panel.style.filter = "";
+      return;
+    }
+    const dur = 620;
+    const start = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const t = Math.min((now - start) / dur, 1);
+      // Both directions ease out on "how far the fold has travelled" (see ThreadSidebar)
+      const p = expanded ? 1 - easeOutCubic(t) : easeOutCubic(t);
+      pathEl.setAttribute("d", morphPath(p));
+      panel.style.filter = `blur(${Math.round(p * 10)}px)`;
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [expanded, isMobile]);
+
   const persistAuto = (v: boolean) => {
     setAuto(v);
     localStorage.setItem("zhigu_watch_auto", v ? "on" : "off");
@@ -66,14 +125,17 @@ export default function LiveMarketPanel() {
     localStorage.setItem("zhigu_watch_interval", String(v));
   };
 
+  const loadItems = async () => {
+    try {
+      setItems(await getWatchlist());
+    } catch {
+      /* silent */
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      try {
-        setItems(await getWatchlist());
-      } catch {
-        /* silent */
-      }
-    })();
+    loadItems();
+    return subscribeWatchlist(loadItems);
   }, []);
 
   const loadWatches = async () => {
@@ -178,19 +240,46 @@ export default function LiveMarketPanel() {
     }
   };
 
-  if (!expanded) {
-    return (
-      <div style={{ borderLeft: "1px solid var(--border-color)", background: "var(--bg-secondary)", display: "flex", alignItems: "center", padding: "8px 6px" }}>
-        <Button type="text" size="small" icon={<LeftOutlined />} onClick={() => setExpanded(true)} title="展开实时行情/信号" />
-      </div>
-    );
-  }
-
   return (
-    <div className="glass-panel" style={{
-      width: 300, flexShrink: 0, borderLeft: "1px solid var(--border-color)",
-      display: "flex", flexDirection: "column", overflow: "hidden",
-    }}>
+    <div style={isMobile
+      ? { display: "contents" }
+      : { display: "flex", flexShrink: 0, borderLeft: "1px solid var(--border-color)" }}>
+      <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+        <defs>
+          <clipPath id="liveLiquidClip" clipPathUnits="objectBoundingBox">
+            <path
+              id="liveLiquidPath"
+              ref={lidRef}
+              d="M 0 0 L 1 0 L 1 1 L 0 1 L 0 0 Z"
+            />
+          </clipPath>
+        </defs>
+      </svg>
+      <div
+        ref={panelRef}
+        className="glass-panel live-panel"
+        style={isMobile
+          ? {
+              position: "absolute", top: 0, bottom: 0, right: 0, zIndex: 21,
+              width: "min(85vw, 340px)",
+              transform: expanded ? "translateX(0)" : "translateX(100%)",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+              boxShadow: expanded ? "0 0 24px rgba(0, 0, 0, 0.35)" : "none",
+            }
+          : {
+              width: expanded ? 300 : 0, flexShrink: 0,
+              display: "flex", flexDirection: "column", overflow: "hidden",
+              clipPath: "url(#liveLiquidClip)",
+            }}
+      >
+      {/* Inner surface keeps a fixed width and stays pinned to the right edge, so the
+          content is unveiled right-to-left instead of reflowing/sliding */}
+      <div style={isMobile
+        ? { width: "100%", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }
+        : {
+            width: 300, minWidth: 300, flex: 1, alignSelf: "flex-end",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
       <div style={{
         padding: "10px 12px", borderBottom: "1px solid var(--border-color)",
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -200,7 +289,7 @@ export default function LiveMarketPanel() {
         </span>
         <span style={{ display: "flex", gap: 4 }}>
           <Button type="text" size="small" icon={<ReloadOutlined spin={loadingSignals} />} onClick={() => { loadSignals(); loadWatchSignals(); }} title="刷新信号" />
-          <Button type="text" size="small" icon={<RightOutlined />} onClick={() => setExpanded(false)} title="收起" />
+          <Button type="text" size="small" icon={<RightOutlined />} onClick={onToggle} title="收起" />
         </span>
       </div>
 
@@ -327,6 +416,11 @@ export default function LiveMarketPanel() {
             );
           })}
         </div>
+      </div>
+      </div>
+      </div>
+      <div className={(isMobile ? "live-toggle-btn" : "live-toggle") + (expanded ? " hide" : "")}>
+        <Button type="text" size="small" icon={<LeftOutlined />} onClick={onToggle} title="展开实时行情/信号" />
       </div>
     </div>
   );

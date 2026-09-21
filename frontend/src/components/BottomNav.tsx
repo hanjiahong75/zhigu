@@ -1,17 +1,19 @@
 ﻿import { useNavigate, useLocation } from "react-router-dom";
 import {
-  LineChartOutlined, StarOutlined, WalletOutlined,
+  RobotOutlined, LineChartOutlined, StarOutlined, WalletOutlined,
   ReadOutlined, DollarOutlined,
 } from "@ant-design/icons";
 
 const tabs = [
-  { key: "news", label: "新闻", icon: <ReadOutlined />, path: "/news" },
+  { key: "home", label: "AI 对话", icon: <RobotOutlined />, path: "/home" },
   { key: "market", label: "行情", icon: <LineChartOutlined />, path: "/market" },
   { key: "watchlist", label: "自选", icon: <StarOutlined />, path: "/watchlist" },
   { key: "funds", label: "基金", icon: <DollarOutlined />, path: "/funds" },
   { key: "holdings", label: "持有", icon: <WalletOutlined />, path: "/holdings" },
+  { key: "news", label: "新闻", icon: <ReadOutlined />, path: "/news" },
 ];
 
+/** Phone-only bottom tab bar (the left rail is hidden below 768px). */
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();

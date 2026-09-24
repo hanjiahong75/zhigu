@@ -8,11 +8,17 @@ from .models.database import init_db
 from .config import APP_TITLE, APP_VERSION, CORS_ORIGINS
 from .services.quote_poller import get_quote_poller
 from .services.watch_service import get_watch_monitor
+from .services.auth_service import SECRET_KEY
 import asyncio
 import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not SECRET_KEY or SECRET_KEY == "zhigu-jwt-secret-change-in-production":
+        raise RuntimeError(
+            "未配置 JWT_SECRET_KEY，服务拒绝启动。请在 backend/.env 添加强随机密钥，例如：\n"
+            'JWT_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(48))")'
+        )
     init_db()
     poller = get_quote_poller()
     poller.start()

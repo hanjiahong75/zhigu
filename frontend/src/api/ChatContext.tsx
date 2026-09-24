@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
+﻿import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 import { App } from "antd";
 import {
   sendChatMessage, sendChatMessageStream, getChatThreads, getChatThreadMessages,
@@ -290,28 +290,3 @@ export function useChat() {
   return useContext(ChatContext);
 }
 
-export function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/^### (.+)$/gm, '<h3 style="color:#1677ff;font-size:14px;margin:10px 0 4px;border-bottom:1px solid #e8f4ff;padding-bottom:4px;">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;margin:12px 0 6px;">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br/>");
-  html = html.replace(
-    /\|(.+)\|/g,
-    (match) => {
-      if (match.includes("---")) return "";
-      const cells = match.split("|").filter((c) => c.trim());
-      const isHeader = cells.length > 0 && cells.every((c) => /^[\s\u4e00-\u9fff]+$/.test(c.trim()));
-      const tag = isHeader ? "th" : "td";
-      const row = cells.map((c) => `<${tag}>${c.trim()}</${tag}>`).join("");
-      return `<tr>${row}</tr>`;
-    }
-  );
-  html = `<p>${html}</p>`;
-  html = html.replace(
-    /(<tr>.*?<\/tr>)/gs,
-    (table) => `<table style="width:100%;border-collapse:collapse;margin:6px 0;font-size:12px;"><tbody>${table}</tbody></table>`
-  );
-  return html;
-}

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..models.database import get_db, SessionLocal
@@ -15,7 +16,7 @@ from ..services.retrieval import build_context_prompt
 from ..services.memory import store_memory
 from ..services.summarizer import should_summarize, generate_summary
 from ..services.chat_service import chat_full, generate_title, chat_full_stream, chat_agent, chat_agent_stream
-from ..services.auth_service import create_user, authenticate_user, update_profile, change_password, get_user_by_id, create_access_token
+from ..services.auth_service import create_user, authenticate_user, update_profile as update_user_profile, change_password, get_user_by_id, create_access_token, decode_access_token
 from ..services.user_profile_service import get_or_create_profile, update_profile, build_profile_context
 from ..services.global_data import (
     get_global_quote, search_global_stocks, get_global_kline,
@@ -579,6 +580,24 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+# --- JWT 鉴权依赖 ---
+_security = HTTPBearer(auto_error=False)
+
+
+def get_current_user(creds: HTTPAuthorizationCredentials = Depends(_security),
+                     db: Session = Depends(get_db)) -> User:
+    """从 Authorization: Bearer 解析 JWT 并返回当前用户，失败一律 401。"""
+    if not creds or creds.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="未提供登录凭证，请先登录")
+    payload = decode_access_token(creds.credentials)
+    if not payload or "sub" not in payload:
+        raise HTTPException(status_code=401, detail="登录凭证无效或已过期，请重新登录")
+    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    return user
+
+
 @router.get('/chat/threads/{thread_id}/watches')
 def api_thread_watches(thread_id: str):
     """List the thread's watch list (M5)."""
@@ -668,29 +687,32 @@ def api_login(req: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get('/auth/profile')
-def api_get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
-    """Get user profile."""
-    profile = get_user_by_id(db, user_id)
+def api_get_profile(current_user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """获取当前登录用户的资料（身份取自 JWT，不可伪造）。"""
+    profile = get_user_by_id(db, current_user.id)
     if not profile:
         raise HTTPException(status_code=404, detail="用户不存在")
     return profile
 
 
 @router.put('/auth/profile')
-def api_update_profile(user_id: int = Query(...), nickname: str = Query(None),
+def api_update_profile(nickname: str = Query(None),
+                       current_user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    """Update nickname."""
-    ok = update_profile(db, user_id, nickname=nickname)
+    """修改当前登录用户的昵称。"""
+    ok = update_user_profile(db, current_user.id, nickname=nickname)
     if not ok:
         raise HTTPException(status_code=404, detail="用户不存在")
     return {"ok": True}
 
 
 @router.post('/auth/change-password')
-def api_change_password(req: ChangePasswordRequest, user_id: int = Query(...),
+def api_change_password(req: ChangePasswordRequest,
+                        current_user: User = Depends(get_current_user),
                         db: Session = Depends(get_db)):
-    """Change password."""
-    ok, msg = change_password(db, user_id, req.old_password, req.new_password)
+    """修改当前登录用户的密码。"""
+    ok, msg = change_password(db, current_user.id, req.old_password, req.new_password)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     return {"ok": True, "message": msg}
@@ -709,13 +731,13 @@ class WxLoginRequest(BaseModel):
 
 @router.post('/auth/wx-login')
 def wx_login(req: WxLoginRequest, db: Session = Depends(get_db)):
-    import requests as wx_req
+    from curl_cffi import requests as wx_req
     wx_appid = os.getenv("WX_APPID", "")
     wx_secret = os.getenv("WX_SECRET", "")
     if not wx_appid or not wx_secret:
         raise HTTPException(500, "WX_APPID/WX_SECRET not configured in .env")
     wx_url = f"https://api.weixin.qq.com/sns/jscode2session?appid={wx_appid}&secret={wx_secret}&js_code={req.code}&grant_type=authorization_code"
-    resp = wx_req.get(wx_url)
+    resp = wx_req.get(wx_url, impersonate="chrome")
     wx_data = resp.json()
     if "errcode" in wx_data and wx_data["errcode"] != 0:
         raise HTTPException(400, f"wx login failed: {wx_data.get('errmsg', '')}")

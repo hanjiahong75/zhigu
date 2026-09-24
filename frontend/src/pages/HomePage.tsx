@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import ThreadSidebar from "../components/ThreadSidebar";
 import ChatStockCard from "../components/ChatStockCard";
 import LiveMarketPanel from "../components/LiveMarketPanel";
-import { useChat, renderMarkdown } from "../api/ChatContext";
+import MarkdownView from "../components/MarkdownView";
+import { useChat } from "../api/ChatContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 
 const { Text } = Typography;
@@ -116,7 +117,7 @@ export default function HomePage() {
                   display: "inline-block", maxWidth: "100%",
                 }}>
                   {msg.role === "assistant"
-                    ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                    ? <MarkdownView content={msg.content} variant="chat" />
                     : <Text style={{ color: "var(--bubble-user-text)" }}>{msg.content}</Text>}
                 </div>
                 <div style={{

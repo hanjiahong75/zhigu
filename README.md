@@ -38,11 +38,19 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. 配置 API Key
+### 3. 配置环境变量
 
 ```bash
 cp backend/.env.example backend/.env
-# 编辑 backend/.env，填入你的 DeepSeek API Key
+```
+
+编辑 `backend/.env`，至少填写两项：
+
+- `DEEPSEEK_API_KEY`：DeepSeek 开放平台的 API Key，用于对话生成与工具调用
+- `JWT_SECRET_KEY`：JWT 签名密钥。**缺失或仍是默认示例值时，后端会拒绝启动并提示生成命令**，可用下面的命令生成：
+
+```bash
+python -c "import secrets;print(secrets.token_urlsafe(48))"
 ```
 
 ### 4. 启动
@@ -57,7 +65,7 @@ npm install
 npm run dev
 ```
 
-浏览器打开 http://localhost:5173
+浏览器打开 http://localhost:5174
 
 ### 5. 微信接入（可选）
 

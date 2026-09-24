@@ -8,6 +8,7 @@ import {
 import ChatStockCard from "./ChatStockCard";
 import StockSearch from "./StockSearch";
 import PortfolioPanel from "./PortfolioPanel";
+import MarkdownView from "./MarkdownView";
 import {
   sendChatMessage, getChatThreads, getChatThreadMessages,
   updateChatThread, deleteChatThread,
@@ -50,33 +51,6 @@ interface ContextMenuState {
   threadId: string;
 }
 
-function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/^### (.+)$/gm, '<h3 style="color:#1677ff;font-size:14px;margin:10px 0 4px;border-bottom:1px solid #e8f4ff;padding-bottom:4px;">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;margin:12px 0 6px;">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br/>");
-
-  html = html.replace(
-    /\|(.+)\|/g,
-    (match) => {
-      if (match.includes("---")) return "";
-      const cells = match.split("|").filter((c) => c.trim());
-      const isHeader = cells.length > 0 && cells.every((c) => /^[\s\u4e00-\u9fff]+$/.test(c.trim()));
-      const tag = isHeader ? "th" : "td";
-      const row = cells.map((c) => `<${tag}>${c.trim()}</${tag}>`).join("");
-      return `<tr>${row}</tr>`;
-    }
-  );
-
-  html = `<p>${html}</p>`;
-  html = html.replace(
-    /(<tr>.*?<\/tr>)/gs,
-    (table) => `<table style="width:100%;border-collapse:collapse;margin:6px 0;font-size:12px;"><tbody>${table}</tbody></table>`
-  );
-  return html;
-}
 
 
 export default function ChatPanel() {
@@ -386,7 +360,7 @@ export default function ChatPanel() {
               </div>
               <div style={{ maxWidth: "95%", minWidth: 0 }}>
                 <div style={{ padding: "10px 16px", borderRadius: 12, background: msg.role === "user" ? "var(--bubble-user-bg)" : "var(--bubble-ai-bg)", border: msg.role === "user" ? "1px solid var(--bubble-user-border)" : "1px solid var(--bubble-ai-border)", fontSize: 13, lineHeight: "20px", color: "var(--bubble-ai-text)", display: "inline-block", maxWidth: "100%" }}>
-                  {msg.role === "assistant" ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} /> : <Text style={{ color: "var(--bubble-user-text)" }}>{msg.content}</Text>}
+                  {msg.role === "assistant" ? <MarkdownView content={msg.content} variant="chat" /> : <Text style={{ color: "var(--bubble-user-text)" }}>{msg.content}</Text>}
                 </div>
                 {msg.role === "assistant" && msg.stock_data?.kline && msg.stock_data?.quote && (
                   <ChatStockCard stockCode={msg.stock_data.stock_code || msg.stock_code} stockName={msg.stock_data.stock_name || msg.stock_name} market={msg.stock_data.market || "sz"} quote={msg.stock_data.quote} initialKline={msg.stock_data.kline} initialIndicators={msg.stock_data.indicators || null} />

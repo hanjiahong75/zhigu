@@ -3,7 +3,12 @@ uvicorn[standard]==0.48.0
 sqlalchemy==2.0.50
 akshare==1.18.64
 pydantic==2.13.4
-httpx==0.28.1
 python-dotenv==1.2.2
 chromadb==0.5.23
 sentence-transformers==3.3.1
+python-jose==3.5.0
+curl_cffi==0.15.0
+pandas==2.3.3
+tradingview-ta==3.3.0
+python-multipart==0.0.26
+# easyocr==1.7.2  # 可选：持仓截图 OCR 识别，依赖 torch 体积大（数 GB），不装则图片识别功能自动降级

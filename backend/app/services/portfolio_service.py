@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..models.database import SessionLocal
 from ..models.stock import Portfolio, PortfolioItem
-from .stock_data import get_realtime_quote
+from .stock_data import get_kline_data, get_realtime_quote
 
 logger = logging.getLogger(__name__)
 

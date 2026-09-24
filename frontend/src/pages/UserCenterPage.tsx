@@ -21,7 +21,8 @@ export default function UserCenterPage() {
   const handleUpdateNick = async (values: { nickname: string }) => {
     setNickLoading(true);
     try {
-      const resp = await apiAuth(`/auth/profile?user_id=${user.id}&nickname=${encodeURIComponent(values.nickname)}`, { method: "PUT" });
+      const resp = await apiAuth(`/auth/profile?nickname=${encodeURIComponent(values.nickname)}`, { method: "PUT" });
+      if (resp.status === 401) { handleExpired(); return; }
       if (!resp.ok) throw new Error();
       updateUser({ nickname: values.nickname });
       message.success("昵称已更新");
@@ -35,10 +36,11 @@ export default function UserCenterPage() {
   const handleChangePw = async (values: { old_password: string; new_password: string }) => {
     setPwLoading(true);
     try {
-      const resp = await apiAuth(`/auth/change-password?user_id=${user.id}`, {
+      const resp = await apiAuth(`/auth/change-password`, {
         method: "POST",
         body: JSON.stringify(values),
       });
+      if (resp.status === 401) { handleExpired(); return; }
       const data = await resp.json();
       if (!resp.ok) { message.error(data.detail || "修改失败"); return; }
       message.success(data.message);
@@ -48,6 +50,12 @@ export default function UserCenterPage() {
     } finally {
       setPwLoading(false);
     }
+  };
+
+  const handleExpired = () => {
+    message.warning("登录已过期，请重新登录");
+    logout();
+    navigate("/login");
   };
 
   const handleLogout = () => {

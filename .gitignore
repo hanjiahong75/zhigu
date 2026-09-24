@@ -61,3 +61,15 @@ project.private.config.json
 # Reports / notes
 *.md
 *.txt
+
+# Local document build artifacts (report/deck rendering, not source)
+_docx_build/
+_deck_build/
+_deck_out/
+_recon/
+_开题报告渲染/
+.codex-finalizer/
+
+# Office lock files and local thesis documents
+~$*
+*.docx

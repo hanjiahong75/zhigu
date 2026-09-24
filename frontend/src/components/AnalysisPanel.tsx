@@ -8,6 +8,7 @@ import {
   FileTextOutlined,
 } from "@ant-design/icons";
 import type { StockQuote } from "../types";
+import MarkdownView from "./MarkdownView";
 
 interface Props {
   analysis: string;
@@ -17,37 +18,6 @@ interface Props {
   summary?: string;
 }
 
-function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/^### (.+)$/gm, '<h3 style="color:#1677ff;font-size:16px;margin:16px 0 8px;border-bottom:1px solid #e8f4ff;padding-bottom:6px;">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:18px;margin:20px 0 10px;">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br/>");
-
-  html = html.replace(
-    /\|(.+)\|/g,
-    (match) => {
-      if (match.includes("---")) return "";
-      const cells = match.split("|").filter((c) => c.trim());
-      const isHeader =
-        cells.length > 0 &&
-        cells.every((c) => /^[\s\u4e00-\u9fff]+$/.test(c.trim()));
-      const tag = isHeader ? "th" : "td";
-      const row = cells.map((c) => `<${tag}>${c.trim()}</${tag}>`).join("");
-      return `<tr>${row}</tr>`;
-    }
-  );
-
-  html = `<p>${html}</p>`;
-  html = html.replace(
-    /(<tr>.*?<\/tr>)/gs,
-    (table) =>
-      `<table style="width:100%;border-collapse:collapse;margin:12px 0;"><tbody>${table}</tbody></table>`
-  );
-
-  return html;
-}
 
 export default function AnalysisPanel({ analysis, quote, loading, memoryContext, summary }: Props) {
   const isUp = quote.change_pct >= 0;
@@ -117,10 +87,9 @@ export default function AnalysisPanel({ analysis, quote, loading, memoryContext,
             <Spin /> 正在生成分析...
           </div>
         ) : (
-          <div
-            style={{ lineHeight: 1.8, fontSize: 14, color: "#333" }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(analysis) }}
-          />
+          <div style={{ lineHeight: 1.8, fontSize: 14, color: "#333" }}>
+            <MarkdownView content={analysis} variant="analysis" />
+          </div>
         )}
       </Card>
       {memoryContext && (
